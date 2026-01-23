@@ -141,3 +141,42 @@ if result.errors:
         print(f"エラー: {err}")
 else:
     print("エラーが見つかりませんでした")
+
+print("\n--- 深層ネストの検証 ---")
+DEEP_SCHEMA = {
+    "level1": {
+        "level2": {
+            "level3": {
+                "level4": {
+                    "level5": v.str().regex(r"^deep$")
+                }
+            }
+        }
+    }
+}
+deep_data = {"level1": {"level2": {"level3": {"level4": {"level5": "deep"}}}}}
+try:
+    validate(deep_data, DEEP_SCHEMA)
+    print("5階層のネスト検証に成功！")
+except ValidationError as e:
+    print(f"深層ネストエラー: {e.path} - {e.message}")
+
+# さらに深い動的なネストの例
+def create_deep_schema(depth):
+    schema = v.str()
+    for _ in range(depth):
+        schema = {"next": schema}
+    return schema
+
+def create_deep_data(depth, value):
+    data = value
+    for _ in range(depth):
+        data = {"next": data}
+    return data
+
+deep_depth = 20
+try:
+    validate(create_deep_data(deep_depth, "hello"), create_deep_schema(deep_depth))
+    print(f"{deep_depth}階層の動的ネスト検証に成功！")
+except ValidationError as e:
+    print(f"{deep_depth}階層ネストエラー: {e.path} - {e.message}")
