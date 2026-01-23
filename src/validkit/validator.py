@@ -41,6 +41,10 @@ def validate_internal(
 
     # 2. Validator objects
     if isinstance(schema, Validator):
+        # Allow None if optional
+        if value is None and schema._optional:
+            return base if base is not None else None
+
         # Check condition if any
         if schema._when_condition and not schema._when_condition(root_data):
             # If condition not met and we have a base value, use it, else return None (or skip)
@@ -88,6 +92,13 @@ def validate_internal(
                     # Use base value
                     result[key] = sub_base
                     continue
+                
+                # Check condition for requirement
+                if isinstance(sub_schema, Validator) and sub_schema._when_condition:
+                    if not sub_schema._when_condition(root_data):
+                        # Condition not met, not required
+                        continue
+
                 if is_optional or partial:
                     # Skip or keep as None
                     if is_optional and sub_base is not None:
