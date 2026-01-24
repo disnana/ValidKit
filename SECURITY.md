@@ -166,7 +166,6 @@ pip install --upgrade validkit-py
 - 2026-01-24: 初版作成
 
 ---
----
 
 # Security Policy
 
