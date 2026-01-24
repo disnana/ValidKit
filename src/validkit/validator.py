@@ -2,14 +2,14 @@ from typing import Any, Dict, List, Union, Optional
 from .v import Validator, v
 
 class ValidationError(Exception):
-    def __init__(self, message: str, path: str = "", value: Any = None):
+    def __init__(self, message: str, path: str = "", value: Any = None) -> None:
         self.message = message
         self.path = path
         self.value = value
         super().__init__(f"{path}: {message}" if path else message)
 
 class ErrorDetail:
-    def __init__(self, path: str, message: str, value: Any):
+    def __init__(self, path: str, message: str, value: Any) -> None:
         self.path = path
         self.message = message
         self.value = value
@@ -18,7 +18,7 @@ class ErrorDetail:
         return f"{self.path}: {self.message} (value: {self.value})"
 
 class ValidationResult:
-    def __init__(self, data: Any, errors: Optional[List[ErrorDetail]] = None):
+    def __init__(self, data: Any, errors: Optional[List[ErrorDetail]] = None) -> None:
         self.data = data
         self.errors = errors or []
 
