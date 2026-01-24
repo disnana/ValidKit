@@ -4,87 +4,32 @@
 [![PyPI](https://img.shields.io/pypi/v/validkit-py?label=PyPI)](https://pypi.org/project/validkit-py/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ValidKit は、**辞書ベースで簡潔に定義でき、日本語キーや複雑なネストに対応した Python バリデーションライブラリ**です。Pydantic より軽量で、Discord ボットの設定管理や設定ファイルの検証など、実用的かつ再現性の高いワークフローを想定しています。
+ValidKit は、**「直感的なスキーマ定義」と「日本語キーへの完全対応」**を特徴とする、Python 用の軽量バリデーションライブラリです。
+
+複雑にネストされた設定ファイルや、Discord ボットのユーザー設定、外部 API からのレスポンスなどを、シンプルかつ堅牢に検証するために設計されました。Pydantic ほど重厚ではなく、しかし辞書ベースの柔軟性と強力なチェーンメソッドを提供します。
+
+---
+
+## 🚀 なぜ ValidKit なのか？
+
+- **クラス定義不要**: 辞書そのものがスキーマになります。既存の JSON/YAML 構造をそのまま定義に落とし込めます。
+- **日本語キーにフレンドリー**: `v.str()` や `v.int()` を日本語のキー名と組み合わせて、可読性の高いバリデーションを記述できます。
+- **高度な検証をシンプルに**: 正規表現、数値範囲、カスタム関数、さらには「他のフィールドの値に応じた検証（条件付き検証）」も直感的に書けます。
+- **モダンな開発フロー**: SLSA v3 準拠の来歴証明（provenance）に対応し、サプライチェーンの安全性を確保しています。
 
 ---
 
 ## 目次
 
 * [概要](#概要)
-* [サプライチェーンセキュリティ](#サプライチェーンセキュリティ)
-* [品質管理・テスト](#品質管理テスト)
 * [特徴](#特徴)
 * [インストール](#インストール)
 * [クイックスタート](#クイックスタート)
-* [API 例（よく使う関数・メソッド）](#api-例よく使う関数メソッド)
+* [API 例](#api-例)
 * [高度な使い方](#高度な使い方)
-
-  * [部分更新とデフォルト値のマージ](#部分更新とデフォルト値のマージ)
-  * [マイグレーション](#マイグレーション)
-  * [SLSA / in-toto provenance の検証](#slsa--in-toto-provenance-の検証)
-* [CI / リリースの説明（簡潔）](#ci--リリースの説明簡潔)
+* [品質管理・セキュリティ](#品質管理・セキュリティ)
 * [貢献ガイドライン](#貢献ガイドライン)
 * [ライセンス](#ライセンス)
-
----
-
-## 概要
-
-ValidKit は、**シンプルな辞書スキーマ**を用いることで、素早く堅牢なバリデーションを行えるよう設計されています。主な対象は設定ファイル（YAML/JSON）、ユーザー入力、外部データの検証です。
-
-設計方針：
-
-* 最小限の依存で高速に動作すること
-* 読みやすく直感的なスキーマ記述
-* 日本語キーや混在するデータ構造への対応
-* CI による自動検証・来歴証明（provenance）との親和性
-
----
-
-## サプライチェーンセキュリティ
-
-本プロジェクトは GitHub Actions および PyPI Trusted Publishing を利用し、すべてのリリースに対して **in-toto / SLSA v3 準拠の provenance（来歴証明）** を公開しています。
-
-**ポイント**
-
-* PyPI 側の `multiple.intoto.jsonl` を含む attestation を生成・保存しています。
-* GitHub 側では SLSA provenance（`*.intoto.jsonl`）を生成し、Release assets に添付しています。
-* これにより、配布物が「どのコミット／どの workflow／どの環境」で作られたかを検証できます。
-
-**検証例**（ローカルで検証する場合）
-
-```bash
-# slsa-verifier を使った一例（インストール済みであること）
-# wheel ファイルと provenance ファイルを用いて検証
-slsa-verifier verify-artifact dist/validkit-1.2.3-py3-none-any.whl \
-  --provenance multiple.intoto.jsonl \
-  --source-uri github.com/disnana/ValidKit
-```
-
-※ 実運用では CI に `slsa-verifier` を組み込んで自動検証を行うことが推奨されます。
-
----
-
-## 品質管理・テスト
-
-本プロジェクトでは、以下を CI にて必須化しています：
-
-* **Ruff** による lint（自動修正推奨）
-* **mypy** による静的型チェック
-* **pytest** による単体テスト
-
-これらはすべて GitHub Actions に統合され、Pull Request / main ブランチへの push の際に自動実行されます。README 上部の CI バッジから実行状況を確認できます。
-
----
-
-## 特徴
-
-* 📝 **辞書ベースのスキーマ** — クラス定義不要で、設定ファイルの形に合わせてそのままスキーマ化できます。
-* 🌏 **日本語キー対応** — 日本語のキー名を扱えるため、ローカル向け設定や既存の日本語データとの親和性が高いです。
-* 🔗 **チェイン可能なバリデータ** — `v.int().range(1, 10)` のように直感的に記述できます。
-* 🔄 **マイグレーション機能** — 古い形式のデータを検証と同時に変換できます。
-* 🛠️ **部分更新・デフォルト値** — 部分的な更新（partial）や base によるデフォルトマージをサポートします。
-* 🔍 **詳細なエラー収集** — 全エラーを一括で収集し、エラー箇所のパスを分かりやすく表示します。
 
 ---
 
@@ -94,22 +39,23 @@ slsa-verifier verify-artifact dist/validkit-1.2.3-py3-none-any.whl \
 pip install validkit-py
 ```
 
-> 現時点ではプレリリース版の可能性があります。正式版は PyPI のページで確認してください。
-
 ---
 
 ## クイックスタート
 
+わずか数行で、複雑なデータ構造を検証できます。
+
 ```python
 from validkit import v, validate, ValidationError
 
+# スキーマ定義：辞書の形がそのままバリデーション構造になります
 SCHEMA = {
     "ユーザー名": v.str().regex(r"^\w{3,15}$"),
     "レベル": v.int().range(1, 100),
     "スキル": v.list(v.oneof(["火", "水", "風"])),
     "設定": {
         "通知": v.bool(),
-        "言語": v.oneof(["日本語", "English"])
+        "言語": v.oneof(["日本語", "English"]).optional()
     }
 }
 
@@ -117,30 +63,47 @@ data = {
     "ユーザー名": "nana_kit",
     "レベル": 50,
     "スキル": ["火", "風"],
-    "設定": {"通知": True, "言語": "日本語"}
+    "設定": {"通知": True}  # 言語は optional なので省略可能
 }
 
 try:
+    # 検証実行
     validated = validate(data, SCHEMA)
-    print("検証成功！", validated)
+    print(f"検証成功！レベル: {validated['レベル']}")
 except ValidationError as e:
-    print(f"エラー: {e.path} - {e.message}")
+    # どこで何がエラーになったか、分かりやすいパスが表示されます
+    print(f"エラー発生箇所: {e.path} - {e.message}")
 ```
 
 ---
 
-## API 例（よく使う関数・メソッド）
+## 特徴
 
-> ここでは代表的な関数・ユースケースを簡潔に示します。実際のシグネチャや追加オプションはドキュメント（/docs）を参照してください。
+* 📝 **直感的なチェインメソッド** — `v.int().range(1, 10).optional()` のように流れるように記述。
+* 🌏 **日本語キー対応** — 日本語のキー名をそのまま扱えるため、仕様書に近いコードが書けます。
+* 🔄 **強力な変換・マイグレーション** — 旧形式から新形式へのキー名変換や、値の動的変換を検証時に同時に行えます。
+* 🛠️ **デフォルト値とマージ** — 不足している値をベース設定（デフォルト値）で自動補完します。
+* 🔍 **全エラーの一括収集** — 最初のエラーで止まらず、すべての不備を洗い出すことが可能です。
 
-* `v.str()`, `v.int()`, `v.bool()`, `v.list(subschema)`, `v.oneof([...])` — 基本バリデータ
-* 連鎖メソッド：`.range(min, max)`, `.regex(pattern)`, `.optional()`, `.default(value)` など
-* `validate(data, schema, *, partial=False, base=None, migrate=None)` — 主関数
+---
 
-  * `partial=True`：不足キーを許容し部分更新を行う
-  * `base=<dict>`：既存のデフォルト値とマージする
-  * `migrate=<dict|callable>`：旧キー→新キーマップや変換関数
-* `ValidationError` — 例外。`path` / `message` / `errors` を持つ
+## API 例
+
+詳細なリファレンスは [docs/index.md](docs/index.md) を参照してください。
+
+### 基本バリデータ
+* `v.str()`: 文字列
+* `v.int()` / `v.float()`: 数値
+* `v.bool()`: 真偽値
+* `v.list(schema)`: リスト（要素のスキーマを指定）
+* `v.dict(key_type, value_schema)`: 辞書
+
+### 修飾メソッド
+* `.optional()`: 必須でないフィールドにする
+* `.default(value)`: 値がない場合のデフォルト値を指定（※実装予定/ベースマージ推奨）
+* `.regex(pattern)`: 正規表現チェック
+* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック
+* `.custom(func)`: 独自の変換・検証ロジックを注入
 
 ---
 
@@ -148,63 +111,60 @@ except ValidationError as e:
 
 ### 部分更新とデフォルト値のマージ
 
+設定ファイルの一部だけをユーザーが変更した場合などに便利です。
+
 ```python
 DEFAULT_CONFIG = {"言語": "English", "音量": 50}
-partial_input = {"音量": 80}
+user_input = {"音量": 80}
 
-updated = validate(
-    partial_input,
-    SCHEMA,
-    partial=True,  # 不足キーを許可
-    base=DEFAULT_CONFIG  # デフォルト値とマージ
-)
+# partial=True で不足キーを許容し、base でデフォルト値を補完
+updated = validate(user_input, SCHEMA, partial=True, base=DEFAULT_CONFIG)
+# -> {'言語': 'English', '音量': 80}
 ```
 
 ### マイグレーション
 
+古いバージョンの設定データを自動的に新しい形式へ変換します。
+
 ```python
-old_data = {"旧キー": "値", "timeout": 30}
+old_data = {"旧設定": "on", "timeout": 30}
 
 migrated = validate(
-    old_data,
-    SCHEMA,
+    old_data, 
+    SCHEMA, 
     migrate={
-        "旧キー": "新キー",
+        "旧設定": "通知",
         "timeout": lambda v: f"{v}s"
     }
 )
 ```
 
-### SLSA / in-toto provenance の検証
+---
 
-プロジェクトは自動で provenance を生成しますが、ローカルや企業内のパイプラインで検証するには `slsa-verifier` 等を利用します。
+## 品質管理・セキュリティ
+
+### サプライチェーンセキュリティ
+本プロジェクトは **in-toto / SLSA v3 準拠の provenance（来歴証明）** を公開しています。
+PyPI に公開された成果物が、正しいソースコードから正しい手順でビルドされたことを数学的に証明できます。
 
 ```bash
-# 例: wheel と provenance を使った検証
-slsa-verifier verify-artifact dist/validkit-1.2.3-py3-none-any.whl \
+# slsa-verifier を使った検証例
+slsa-verifier verify-artifact dist/validkit-*.whl \
   --provenance multiple.intoto.jsonl \
   --source-uri github.com/disnana/ValidKit
 ```
 
----
-
-## CI / リリースの説明（簡潔）
-
-* `ci.yml` で以下を実行しています：Lint（Ruff）、Type check（mypy）、Test（pytest）
-* main ブランチで新バージョン検出時は自動でビルド・provenance 生成・PyPI 公開・GitHub Release 作成まで行います。
-* Publish ジョブは `environment: pypi` を利用した Trusted Publishing（OIDC）でトークン管理せず安全に署名付きで公開します。
+### 開発品質
+以下のツールを CI で常時実行し、高いコード品質を維持しています。
+* **Ruff**: 高速な Lint & フォーマット
+* **mypy**: 厳格な静的型チェック
+* **pytest**: 網羅的な単体テスト
 
 ---
 
 ## 貢献ガイドライン
 
-1. Issue を立てる / 相談する
-2. Fork → branch を切る
-3. テストを追加（該当する場合）
-4. PR を作成：変更理由と関連 Issue を記載
-5. CI が全て通ること
-
-PR は必ず Lint / mypy / pytest が通ることを条件とします。
+Issue の報告や Pull Request を歓迎します！詳細は [SECURITY.md](SECURITY.md) または Issue テンプレートを確認してください。
 
 ---
-**MITライセンス**
+**MIT License**
