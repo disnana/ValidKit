@@ -1,5 +1,5 @@
-from typing import Any, Dict, List, Optional, Union, Type, Callable
-from .v import Validator, VBuilder, v
+from typing import Any, Dict, List, Union, Optional
+from .v import Validator, v
 
 class ValidationError(Exception):
     def __init__(self, message: str, path: str = "", value: Any = None):
@@ -14,11 +14,11 @@ class ErrorDetail:
         self.message = message
         self.value = value
     
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.path}: {self.message} (value: {self.value})"
 
 class ValidationResult:
-    def __init__(self, data: Any, errors: List[ErrorDetail] = None):
+    def __init__(self, data: Any, errors: Optional[List[ErrorDetail]] = None):
         self.data = data
         self.errors = errors or []
 
@@ -30,14 +30,18 @@ def validate_internal(
     partial: bool = False,
     base: Any = None,
     collect_errors: bool = False,
-    errors: List[ErrorDetail] = None
+    errors: Optional[List[ErrorDetail]] = None
 ) -> Any:
     # 1. Shorthand types
     if isinstance(schema, type) and schema in (str, int, float, bool):
-        if schema == str: schema = v.str()
-        elif schema == int: schema = v.int()
-        elif schema == float: schema = v.float()
-        elif schema == bool: schema = v.bool()
+        if schema is str:
+            schema = v.str()
+        elif schema is int:
+            schema = v.int()
+        elif schema is float:
+            schema = v.float()
+        elif schema is bool:
+            schema = v.bool()
 
     # 2. Validator objects
     if isinstance(schema, Validator):
@@ -73,7 +77,6 @@ def validate_internal(
         base_dict = base if isinstance(base, dict) else {}
 
         # All keys in schema
-        all_keys = set(schema.keys())
         if not partial:
             # Check for missing keys
             pass # We'll check individually
@@ -134,7 +137,7 @@ def validate(
     schema: Any, 
     partial: bool = False, 
     base: Any = None, 
-    migrate: Dict[str, Any] = None, 
+    migrate: Optional[Dict[str, Any]] = None, 
     collect_errors: bool = False
 ) -> Union[Any, ValidationResult]:
     
@@ -158,7 +161,7 @@ def validate(
                 # Note: if it's a rename, we might want to transform too.
                 # But the prompt example shows them separately.
 
-    errors = []
+    errors: List[ErrorDetail] = []
     try:
         validated_data = validate_internal(
             data, schema, root_data=data, 
