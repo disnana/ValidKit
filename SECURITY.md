@@ -19,21 +19,21 @@ ValidKit のセキュリティ脆弱性を発見された場合は、以下の�
 
 ### 報告方法
 
-**機密性の高い脆弱性の場合（推奨）:**
+**機密性の高い脆弱性の場合（推奨）**
 
-GitHub のセキュリティアドバイザリ機能を使用してください：
+GitHub のセキュリティアドバイザリ機能を使用してください。
 
 1. [Security Advisories ページ](https://github.com/disnana/ValidKit/security/advisories)にアクセス
 2. "Report a vulnerability" をクリック
 3. 脆弱性の詳細を記入して送信
 
-**一般的な問題の場合:**
+**一般的な問題の場合**
 
 GitHub Issue を作成することもできますが、機密性の高い脆弱性の場合は上記の方法を使用してください。
 
 ### 報告に含めるべき情報
 
-脆弱性を報告する際は、以下の情報を含めてください：
+脆弱性を報告する際は、以下の情報を含めてください。
 
 - 脆弱性の種類と影響範囲
 - 再現手順（可能な限り詳細に）
@@ -53,7 +53,7 @@ GitHub Issue を作成することもできますが、機密性の高い脆弱�
 
 ### 重大度の評価
 
-脆弱性は以下の基準で評価されます：
+脆弱性は以下の基準で評価されます。
 
 - **Critical**: リモートコード実行、認証バイパスなど
 - **High**: データ漏洩、権限昇格など
@@ -72,7 +72,7 @@ GitHub Issue を作成することもできますが、機密性の高い脆弱�
 
 ### 通知
 
-セキュリティアップデートは以下の方法で通知されます：
+セキュリティアップデートは以下の方法で通知されます。
 
 - GitHub Security Advisories
 - GitHub Releases
@@ -82,7 +82,7 @@ GitHub Issue を作成することもできますが、機密性の高い脆弱�
 
 ## サプライチェーンセキュリティ
 
-ValidKit は以下のセキュリティ対策を実施しています：
+ValidKit は以下のセキュリティ対策を実施しています。
 
 ### SLSA Provenance
 
@@ -92,7 +92,7 @@ ValidKit は以下のセキュリティ対策を実施しています：
 
 ### 検証方法
 
-配布物の検証は `slsa-verifier` を使用できます：
+配布物の検証は `slsa-verifier` を使用できます。
 
 ```bash
 slsa-verifier verify-artifact dist/validkit-*.whl \
@@ -106,7 +106,7 @@ slsa-verifier verify-artifact dist/validkit-*.whl \
 
 ## 安全な利用のためのベストプラクティス
 
-ValidKit を安全に使用するための推奨事項：
+ValidKit を安全に使用するための推奨事項を以下に示します。
 
 ### 1. 最新バージョンの使用
 
@@ -137,7 +137,7 @@ pip install --upgrade validkit-py
 
 ## 既知の制限事項
 
-現時点で既知のセキュリティ上の制限事項：
+現時点で既知のセキュリティ上の制限事項は以下の通りです。
 
 - ValidKit はバリデーションライブラリであり、サニタイゼーション機能は提供していません
 - 非常に大きなデータや深くネストされたデータに対しては、DoS 攻撃のリスクがあります
@@ -146,7 +146,7 @@ pip install --upgrade validkit-py
 
 ## お問い合わせ
 
-セキュリティに関する質問や懸念事項がある場合：
+セキュリティに関する質問や懸念事項がある場合は、以下をご利用ください。
 
 - GitHub Security Advisories: [Report a vulnerability](https://github.com/disnana/ValidKit/security/advisories)
 - GitHub Issues: [Create an issue](https://github.com/disnana/ValidKit/issues) (非機密情報のみ)
