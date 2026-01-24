@@ -207,7 +207,4 @@ slsa-verifier verify-artifact dist/validkit-1.2.3-py3-none-any.whl \
 PR は必ず Lint / mypy / pytest が通ることを条件とします。
 
 ---
-
-## ライセンス
-
-MIT
+**MITライセンス**
