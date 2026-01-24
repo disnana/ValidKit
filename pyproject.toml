@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "validkit"
+dynamic = ["version"]
+description = "A simple and powerful validation library for Python."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "disnana" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/disnana/ValidKit"
+
+[tool.hatch.version]
+path = "src/validkit/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md", "/LICENSE*"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/validkit"]

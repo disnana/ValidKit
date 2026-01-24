@@ -1,3 +1,4 @@
 *.pyc
 .benchmarks/
 .idea/
+dist/
