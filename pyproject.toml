@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "disnana" },
+    { name = "Disnana",
+     email = "support@disnana.com" },
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
