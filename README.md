@@ -4,7 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/validkit-py?label=PyPI)](https://pypi.org/project/validkit-py/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-ValidKit は、**「直感的なスキーマ定義」と「日本語キーへの完全対応」**を特徴とする、Python 用の軽量バリデーションライブラリです。
+ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キーへの完全対応」</strong>を特徴とする、Python 用の軽量バリデーションライブラリです。
 
 複雑にネストされた設定ファイルや、Discord ボットのユーザー設定、外部 API からのレスポンスなどを、シンプルかつ堅牢に検証するために設計されました。Pydantic ほど重厚ではなく、しかし辞書ベースの柔軟性と強力なチェーンメソッドを提供します。
 
