@@ -1,0 +1,275 @@
+name: Security Scan
+
+on:
+  push:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 毎週月曜 9:00 JST (0:00 UTC)
+    - cron: '0 0 * * 1'
+
+env:
+  # ============================================
+  # Project Settings (Customizable)
+  # ============================================
+  # Enable/Disable specific scans
+  ENABLE_BUN_AUDIT: false # Set to true if you have a Node.js/Bun project
+  
+  # Custom scan paths
+  SRC_PATH: "src/"
+  SCAN_PATH: "."
+  BUN_AUDIT_PATH: "docs/site"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # CodeQL - コードの脆弱性静的解析
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: python
+        queries: security-and-quality
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
+      with:
+        category: "/language:python"
+
+  # Safety - Python依存関係の既知脆弱性チェック
+  safety:
+    name: Safety Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety pip-audit
+        pip install -e .
+    
+    - name: Run Safety check
+      run: safety check --full-report || true
+      continue-on-error: true
+    
+    - name: Run pip-audit
+      run: pip-audit --progress-spinner=off
+
+  # Bandit - Pythonセキュリティ静的解析
+  bandit:
+    name: Bandit Security Linter
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+    
+    - name: Install Bandit
+      run: pip install bandit[toml]
+    
+    - name: Run Bandit
+      run: bandit -r ${{ env.SRC_PATH }} -f json -o bandit-report.json || true
+    
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-report
+        path: bandit-report.json
+
+  # Trivy - 包括的な脆弱性スキャン
+  trivy:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '${{ env.SCAN_PATH }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+    
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v4
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Bun Audit - Node.js(Bun)依存関係の既知脆弱性チェック
+  bun-audit:
+    name: Bun Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      if: env.ENABLE_BUN_AUDIT == 'true'
+    
+    - name: Setup Bun
+      if: env.ENABLE_BUN_AUDIT == 'true'
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+        
+    - name: Run Bun Audit
+      if: env.ENABLE_BUN_AUDIT == 'true'
+      working-directory: ${{ env.BUN_AUDIT_PATH }}
+      run: bun audit
+
+  # Grype - 脆弱性スキャン (OS/Python/JS)
+  grype:
+    name: Grype Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Scan for vulnerabilities
+      uses: anchore/scan-action@v7
+      with:
+        path: "${{ env.SCAN_PATH }}"
+        fail-build: false
+        output-format: json
+    
+    - name: Upload Grype report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: grype-results
+        path: results.json
+
+  # セキュリティサマリー
+  summary:
+    name: Security Summary
+    needs: [codeql, safety, bandit, trivy, bun-audit, grype]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Create summary
+      run: |
+        echo "## 🛡️ Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| CodeQL | ${{ needs.codeql.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Safety | ${{ needs.safety.result == 'success' && '✅ Passed' || '⚠️ Check logs' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Bandit | ${{ needs.bandit.result == 'success' && '✅ Passed' || '⚠️ Check logs' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Trivy | ${{ needs.trivy.result == 'success' && '✅ Passed' || '⚠️ Check logs' }} |" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ env.ENABLE_BUN_AUDIT }}" == "true" ]; then
+          echo "| Bun Audit | ${{ needs.bun-audit.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Bun Audit | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "| Grype | ${{ needs.grype.result == 'success' && '✅ Passed' || '⚠️ Check logs' }} |" >> $GITHUB_STEP_SUMMARY
+
+    - name: Verify all checks passed
+      if: always()
+      run: |
+        echo ""
+        echo "📝 Job statuses:"
+        echo "📝 codeql → ${{ needs.codeql.result == 'success' && '✓ success' || format('✗ {0}', needs.codeql.result) }}"
+        echo "📝 safety → ${{ needs.safety.result == 'success' && '✓ success' || format('✗ {0}', needs.safety.result) }}"
+        echo "📝 bandit → ${{ needs.bandit.result == 'success' && '✓ success' || format('✗ {0}', needs.bandit.result) }}"
+        echo "📝 trivy → ${{ needs.trivy.result == 'success' && '✓ success' || format('✗ {0}', needs.trivy.result) }}"
+        
+        if [ "${{ env.ENABLE_BUN_AUDIT }}" == "true" ]; then
+          echo "📝 bun-audit → ${{ needs.bun-audit.result == 'success' && '✓ success' || format('✗ {0}', needs.bun-audit.result) }}"
+        fi
+        
+        echo "📝 grype → ${{ needs.grype.result == 'success' && '✓ success' || format('✗ {0}', needs.grype.result) }}"
+        echo ""
+        
+        # Check for failures (required ones)
+        FAILED=false
+        if [[ "${{ needs.codeql.result }}" != "success" ]]; then FAILED=true; fi
+        if [[ "${{ needs.safety.result }}" != "success" ]]; then FAILED=true; fi
+        if [[ "${{ needs.bandit.result }}" != "success" && "${{ needs.bandit.result }}" != "skipped" ]]; then FAILED=true; fi
+        if [[ "${{ needs.trivy.result }}" != "success" && "${{ needs.trivy.result }}" != "skipped" ]]; then FAILED=true; fi
+        
+        if [ "${{ env.ENABLE_BUN_AUDIT }}" == "true" ]; then
+          if [[ "${{ needs.bun-audit.result }}" != "success" ]]; then FAILED=true; fi
+        fi
+        
+        if [[ "${{ needs.grype.result }}" != "success" && "${{ needs.grype.result }}" != "skipped" ]]; then FAILED=true; fi
+        
+        if [ "$FAILED" = true ]; then
+          echo "❌ One or more security checks failed."
+          exit 1
+        else
+          echo "# ✓ All security checks succeeded 🎉🎉🎉"
+        fi
+
+  # セキュリティレポート集約
+  security-report:
+    name: Generate Security Report
+    needs: [codeql, safety, bandit, trivy, bun-audit, grype]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Generate Detailed Report
+      run: |
+        echo "# 🛡️ Comprehensive Security Report" > security-report.md
+        echo "Generated at: $(date -u)" >> security-report.md
+        echo "" >> security-report.md
+        
+        echo "## 🔍 Detailed Findings" >> security-report.md
+        
+        # Grype Findings
+        if [ -f artifacts/grype-results/results.json ] && jq -e '.matches | length > 0' artifacts/grype-results/results.json > /dev/null; then
+            echo "### 📦 Grype Scan Results" >> security-report.md
+            echo "\`\`\`json" >> security-report.md
+            jq -r '.matches[] | "Title: " + .vulnerability.id + "\nPackage: " + .artifact.name + " (" + .artifact.version + ")\nSeverity: " + .vulnerability.severity + "\nLink: " + .vulnerability.dataSource + "\n---"' artifacts/grype-results/results.json | head -n 50 >> security-report.md || echo "Parse error" >> security-report.md
+            echo "\`\`\`" >> security-report.md
+        fi
+
+        # Bandit Findings
+        if [ -f artifacts/bandit-report/bandit-report.json ] && jq -e '.results | length > 0' artifacts/bandit-report/bandit-report.json > /dev/null; then
+            echo "### 🐍 Bandit Scan Results" >> security-report.md
+            echo "\`\`\`json" >> security-report.md
+            jq -r '.results[] | "Issue: " + .issue_text + "\nSeverity: " + .issue_severity + "\nFile: " + .filename + ":" + (.line_number|tostring) + "\n---"' artifacts/bandit-report/bandit-report.json | head -n 50 >> security-report.md || echo "Parse error" >> security-report.md
+            echo "\`\`\`" >> security-report.md
+        fi
+
+        cat security-report.md >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload Full Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-security-report
+        path: security-report.md
