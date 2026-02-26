@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generic, List, Optional, TypeVar, overload
+from typing import Any, Dict, Generic, List, Optional, TypeVar, overload, TYPE_CHECKING
 from .v import Validator, v
 
 T = TypeVar("T")
@@ -156,26 +156,27 @@ def validate_internal(
     # 4. Literal / Pre-validated?
     return value
 
-@overload
-def validate(
-    data: Any,
-    schema: Schema[T],
-    partial: bool = ...,
-    base: Any = ...,
-    migrate: Optional[Dict[str, Any]] = ...,
-    collect_errors: bool = ...,
-) -> T: ...
+if TYPE_CHECKING:
+    # Overload definitions are used by type checkers only and skipped at runtime
+    @overload
+    def validate(
+        data: Any,
+        schema: Schema[T],
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        collect_errors: bool = ...,
+    ) -> T: ...
 
-
-@overload
-def validate(
-    data: Any,
-    schema: Any,
-    partial: bool = ...,
-    base: Any = ...,
-    migrate: Optional[Dict[str, Any]] = ...,
-    collect_errors: bool = ...,
-) -> Any: ...
+    @overload
+    def validate(
+        data: Any,
+        schema: Any,
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        collect_errors: bool = ...,
+    ) -> Any: ...
 
 
 def validate(
