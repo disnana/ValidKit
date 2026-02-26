@@ -28,6 +28,9 @@ ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キー
 * [クイックスタート](#クイックスタート)
 * [API 例](#api-例)
 * [高度な使い方](#高度な使い方)
+  * [IDE 補完を効かせる（TypedDict + Schema）](#ide-補完を効かせるtypeddict--schema)
+  * [部分更新とデフォルト値のマージ](#部分更新とデフォルト値のマージ)
+  * [マイグレーション](#マイグレーション)
 * [品質管理・セキュリティ](#品質管理セキュリティ)
 * [貢献ガイドライン](#貢献ガイドライン)
 * [ライセンス](#ライセンス)
@@ -109,6 +112,44 @@ except ValidationError as e:
 ---
 
 ## 高度な使い方
+
+### IDE 補完を効かせる（TypedDict + Schema）
+
+`Schema[T]` クラスを使うと、IDE（PyCharm / VS Code）での型補完が有効になります。
+
+```python
+from typing import TypedDict
+from validkit import v, validate, Schema
+
+# 1. TypedDict でキーと型を定義
+class UserDict(TypedDict):
+    name: str
+    level: int
+
+# 2. Schema[T] でスキーマをラップ
+SCHEMA: Schema[UserDict] = Schema({
+    "name": v.str(),
+    "level": v.int().range(1, 100),
+})
+
+data = {"name": "nana_kit", "level": 50}
+
+# 3. validate に渡すだけ — IDE が戻り値を UserDict として推論する
+result = validate(data, SCHEMA)
+print(result["name"])   # ← IDE が "name" / "level" を補完してくれる
+```
+
+注意:
+- `collect_errors=True` を指定した場合、`validate` は `ValidationResult` を返します。そのため、`Schema[T]` を使っていても戻り値の型は `T` ではなく `ValidationResult` になります。
+
+TypedDict を書くのが面倒な場合は、既存の辞書スキーマを渡す使い方もそのまま使えます。
+型補完が不要なケースでは、変数側に型注釈を書くことで mypy / pyright に型を伝えられます。
+
+```python
+# 型付きスキーマなし（従来の辞書スキーマ）— 変数側にアノテーションを付ける方法
+plain_schema = {"name": v.str(), "level": v.int()}
+result: UserDict = validate(data, plain_schema)  # IDE への型ヒントは変数側で提供
+```
 
 ### 部分更新とデフォルト値のマージ
 

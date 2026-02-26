@@ -1,5 +1,41 @@
-from typing import Any, Dict, List, Union, Optional
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    overload,
+    TYPE_CHECKING,
+    Literal,
+)
 from .v import Validator, v
+
+T = TypeVar("T")
+
+
+class Schema(Generic[T]):
+    """A typed wrapper around a dict schema that carries type information for IDE completion.
+
+    Usage::
+
+        from typing import TypedDict
+        from validkit import v, validate, Schema
+
+        class UserDict(TypedDict):
+            name: str
+            age: int
+
+        SCHEMA: Schema[UserDict] = Schema({"name": v.str(), "age": v.int()})
+
+        data: UserDict = {"name": "Alice", "age": 30}
+        result = validate(data, SCHEMA)  # inferred as UserDict by the IDE
+        print(result["name"])            # IDE completes "name" / "age"
+    """
+
+    def __init__(self, schema: Dict[str, Any]) -> None:
+        self._schema = schema
 
 class ValidationError(Exception):
     def __init__(self, message: str, path: str = "", value: Any = None) -> None:
@@ -132,15 +168,66 @@ def validate_internal(
     # 4. Literal / Pre-validated?
     return value
 
+if TYPE_CHECKING:
+    # Overload definitions are used by type checkers only and skipped at runtime
+    @overload
+    def validate(
+        data: Any,
+        schema: Schema[T],
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[True],
+    ) -> ValidationResult: ...
+
+    @overload
+    def validate(
+        data: Any,
+        schema: Schema[T],
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[False] = ...,  # default
+    ) -> T: ...
+
+    @overload
+    def validate(
+        data: Any,
+        schema: Any,
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[True],
+    ) -> ValidationResult: ...
+
+    @overload
+    def validate(
+        data: Any,
+        schema: Any,
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[False] = ...,  # default
+    ) -> Any: ...
+
+
 def validate(
-    data: Any, 
-    schema: Any, 
-    partial: bool = False, 
-    base: Any = None, 
-    migrate: Optional[Dict[str, Any]] = None, 
-    collect_errors: bool = False
-) -> Union[Any, ValidationResult]:
+    data: Any,
+    schema: Any,
+    partial: bool = False,
+    base: Any = None,
+    migrate: Optional[Dict[str, Any]] = None,
+    collect_errors: bool = False,
+) -> Union[Any, "ValidationResult"]:
     
+    # Unwrap Schema[T] to its underlying dict schema
+    if isinstance(schema, Schema):
+        schema = schema._schema
+
     # Apply migration if any
     if migrate and isinstance(data, dict):
         data = data.copy()

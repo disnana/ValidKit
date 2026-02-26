@@ -1,5 +1,5 @@
 from .v import v
-from .validator import validate, ValidationError
+from .validator import validate, ValidationError, Schema
 
-__version__ = "1.0.2"
-__all__ = ["v", "validate", "ValidationError"]
+__version__ = "1.1.0"
+__all__ = ["v", "validate", "ValidationError", "Schema"]
