@@ -183,5 +183,6 @@ def test_schema_generic_optional_field():
 
 def test_schema_exported():
     """Schema is exported from the top-level package."""
-    import validkit
-    assert hasattr(validkit, "Schema")
+    import importlib
+    pkg = importlib.import_module("validkit")
+    assert hasattr(pkg, "Schema")
