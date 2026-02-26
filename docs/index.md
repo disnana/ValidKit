@@ -76,6 +76,29 @@ if result.errors:
 
 ## 高度なパターン
 
+### IDE 補完を効かせる（TypedDict + Schema）
+`Schema[T]` で辞書スキーマを型付きにラップすると、`validate` の戻り値に型が伝搬し、IDE でキー補完が効くようになります。
+
+```python
+from typing import TypedDict
+from validkit import v, validate, Schema
+
+class UserDict(TypedDict):
+    name: str
+    level: int
+
+SCHEMA: Schema[UserDict] = Schema({
+    "name": v.str(),
+    "level": v.int().range(1, 100),
+})
+
+data = {"name": "nana_kit", "level": 50}
+result = validate(data, SCHEMA)    # result は UserDict と推論される
+print(result["name"])             # "name" / "level" が補完される
+```
+
+従来どおり、単なる辞書スキーマを渡す使い方もそのまま利用できます（型補完は `Any` 扱い）。
+
 ### 条件付きバリデーション (`when`)
 「AがTrueの場合のみ、Bを必須にする」といった定義が可能です。
 

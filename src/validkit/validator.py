@@ -164,7 +164,8 @@ def validate(
     base: Any = ...,
     migrate: Optional[Dict[str, Any]] = ...,
     collect_errors: bool = ...,
-) -> T: ...
+) -> T: 
+    pass
 
 
 @overload
@@ -175,7 +176,8 @@ def validate(
     base: Any = ...,
     migrate: Optional[Dict[str, Any]] = ...,
     collect_errors: bool = ...,
-) -> Any: ...
+) -> Any: 
+    pass
 
 
 def validate(
