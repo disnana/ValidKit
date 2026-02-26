@@ -1,4 +1,15 @@
-from typing import Any, Dict, Generic, List, Optional, TypeVar, overload, TYPE_CHECKING
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+    overload,
+    TYPE_CHECKING,
+    Literal,
+)
 from .v import Validator, v
 
 T = TypeVar("T")
@@ -18,6 +29,7 @@ class Schema(Generic[T]):
 
         SCHEMA: Schema[UserDict] = Schema({"name": v.str(), "age": v.int()})
 
+        data: UserDict = {"name": "Alice", "age": 30}
         result = validate(data, SCHEMA)  # inferred as UserDict by the IDE
         print(result["name"])            # IDE completes "name" / "age"
     """
@@ -165,7 +177,19 @@ if TYPE_CHECKING:
         partial: bool = ...,
         base: Any = ...,
         migrate: Optional[Dict[str, Any]] = ...,
-        collect_errors: bool = ...,
+        *,
+        collect_errors: Literal[True],
+    ) -> ValidationResult: ...
+
+    @overload
+    def validate(
+        data: Any,
+        schema: Schema[T],
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[False] = ...,  # default
     ) -> T: ...
 
     @overload
@@ -175,7 +199,19 @@ if TYPE_CHECKING:
         partial: bool = ...,
         base: Any = ...,
         migrate: Optional[Dict[str, Any]] = ...,
-        collect_errors: bool = ...,
+        *,
+        collect_errors: Literal[True],
+    ) -> ValidationResult: ...
+
+    @overload
+    def validate(
+        data: Any,
+        schema: Any,
+        partial: bool = ...,
+        base: Any = ...,
+        migrate: Optional[Dict[str, Any]] = ...,
+        *,
+        collect_errors: Literal[False] = ...,  # default
     ) -> Any: ...
 
 
@@ -186,7 +222,7 @@ def validate(
     base: Any = None,
     migrate: Optional[Dict[str, Any]] = None,
     collect_errors: bool = False,
-) -> Any:
+) -> Union[Any, "ValidationResult"]:
     
     # Unwrap Schema[T] to its underlying dict schema
     if isinstance(schema, Schema):

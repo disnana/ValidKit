@@ -139,6 +139,9 @@ result = validate(data, SCHEMA)
 print(result["name"])   # ← IDE が "name" / "level" を補完してくれる
 ```
 
+注意:
+- `collect_errors=True` を指定した場合、`validate` は `ValidationResult` を返します。そのため、`Schema[T]` を使っていても戻り値の型は `T` ではなく `ValidationResult` になります。
+
 TypedDict を書くのが面倒な場合は、既存の辞書スキーマを渡す使い方もそのまま使えます。
 型補完が不要なケースでは、変数側に型注釈を書くことで mypy / pyright に型を伝えられます。
 
