@@ -1,5 +1,29 @@
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, Generic, List, Optional, TypeVar, overload
 from .v import Validator, v
+
+T = TypeVar("T")
+
+
+class Schema(Generic[T]):
+    """A typed wrapper around a dict schema that carries type information for IDE completion.
+
+    Usage::
+
+        from typing import TypedDict
+        from validkit import v, validate, Schema
+
+        class UserDict(TypedDict):
+            name: str
+            age: int
+
+        SCHEMA: Schema[UserDict] = Schema({"name": v.str(), "age": v.int()})
+
+        result = validate(data, SCHEMA)  # inferred as UserDict by the IDE
+        print(result["name"])            # IDE completes "name" / "age"
+    """
+
+    def __init__(self, schema: Dict[str, Any]) -> None:
+        self._schema = schema
 
 class ValidationError(Exception):
     def __init__(self, message: str, path: str = "", value: Any = None) -> None:
@@ -132,15 +156,41 @@ def validate_internal(
     # 4. Literal / Pre-validated?
     return value
 
+@overload
 def validate(
-    data: Any, 
-    schema: Any, 
-    partial: bool = False, 
-    base: Any = None, 
-    migrate: Optional[Dict[str, Any]] = None, 
-    collect_errors: bool = False
-) -> Union[Any, ValidationResult]:
+    data: Any,
+    schema: Schema[T],
+    partial: bool = ...,
+    base: Any = ...,
+    migrate: Optional[Dict[str, Any]] = ...,
+    collect_errors: bool = ...,
+) -> T: ...
+
+
+@overload
+def validate(
+    data: Any,
+    schema: Any,
+    partial: bool = ...,
+    base: Any = ...,
+    migrate: Optional[Dict[str, Any]] = ...,
+    collect_errors: bool = ...,
+) -> Any: ...
+
+
+def validate(
+    data: Any,
+    schema: Any,
+    partial: bool = False,
+    base: Any = None,
+    migrate: Optional[Dict[str, Any]] = None,
+    collect_errors: bool = False,
+) -> Any:
     
+    # Unwrap Schema[T] to its underlying dict schema
+    if isinstance(schema, Schema):
+        schema = schema._schema
+
     # Apply migration if any
     if migrate and isinstance(data, dict):
         data = data.copy()

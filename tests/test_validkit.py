@@ -5,7 +5,7 @@ import os
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from validkit import v, validate, ValidationError
+from validkit import v, validate, ValidationError, Schema
 
 def test_basic_types():
     assert validate("hello", v.str()) == "hello"
@@ -154,3 +154,34 @@ def test_when_with_base():
     assert validate({"use_default": True}, schema, base=base) == {"use_default": True, "value": 100}
     # When use_default is False, 'when' passes, it requires value
     assert validate({"use_default": False, "value": 10}, schema, base=base) == {"use_default": False, "value": 10}
+
+def test_schema_generic_basic():
+    """Schema[T] wraps a dict schema and validate works identically."""
+    schema = Schema({"name": v.str(), "age": v.int()})
+    data = {"name": "Alice", "age": 30}
+    result = validate(data, schema)
+    assert result == data
+
+def test_schema_generic_validation_error():
+    """Schema[T] still raises ValidationError on bad data."""
+    schema = Schema({"name": v.str(), "level": v.int().range(1, 100)})
+    with pytest.raises(ValidationError):
+        validate({"name": "Bob", "level": 999}, schema)
+
+def test_schema_generic_partial_and_base():
+    """Schema[T] supports partial and base kwargs."""
+    schema = Schema({"a": v.int(), "b": v.int()})
+    base = {"b": 2}
+    result = validate({"a": 1}, schema, base=base)
+    assert result == {"a": 1, "b": 2}
+
+def test_schema_generic_optional_field():
+    """Schema[T] respects optional fields."""
+    schema = Schema({"name": v.str(), "nickname": v.str().optional()})
+    result = validate({"name": "Alice"}, schema)
+    assert result == {"name": "Alice"}
+
+def test_schema_exported():
+    """Schema is exported from the top-level package."""
+    import validkit
+    assert hasattr(validkit, "Schema")
