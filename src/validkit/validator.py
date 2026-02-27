@@ -9,6 +9,7 @@ from typing import (
     overload,
     TYPE_CHECKING,
     Literal,
+    cast,
 )
 from .v import Validator, v
 
@@ -67,7 +68,7 @@ class Schema(Generic[T]):
             sample = SCHEMA.generate_sample()
             # -> {"host": "localhost", "port": 5432, "ssl": False}
         """
-        return _generate_sample(self._schema)
+        return cast(Dict[str, Any], _generate_sample(self._schema))
 
 class ValidationError(Exception):
     def __init__(self, message: str, path: str = "", value: Any = None) -> None:
