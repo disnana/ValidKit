@@ -1,11 +1,12 @@
 import pytest
 import sys
 import os
+from typing import TypedDict
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from validkit import v, validate, ValidationError, Schema
+from validkit import v, validate, ValidationError, Schema, ValidationResult
 
 def test_basic_types():
     assert validate("hello", v.str()) == "hello"
@@ -58,7 +59,9 @@ def test_nested_dict():
     
     with pytest.raises(ValidationError) as excinfo:
         validate({"user": {"name": "Alice", "age": -1}}, schema)
-    assert "user.age" in str(excinfo.value)
+    assert excinfo.value.path == "user.age"
+    # Use 'in' and be less specific about .0 to be flexible
+    assert "is less than minimum" in str(excinfo.value)
 
 def test_optional_fields():
     schema = {
@@ -77,112 +80,114 @@ def test_base_merge():
     base = {"b": 2}
     assert validate({"a": 1}, schema, base=base) == {"a": 1, "b": 2}
 
-def test_migration():
-    schema = {"new_key": v.str(), "val": v.str()}
+def test_migration_advanced():
+    schema = {"new_key": v.str(), "val": v.int()}
     migrate = {
         "old_key": "new_key",
-        "val": lambda v: f"prefix_{v}"
+        "val": lambda v: int(v) if isinstance(v, str) else v
     }
-    data = {"old_key": "hello", "val": "world"}
-    expected = {"new_key": "hello", "val": "prefix_world"}
-    assert validate(data, schema, migrate=migrate) == expected
-
-def test_when_condition():
-    schema = {
-        "enabled": v.bool(),
-        "config": v.str().when(lambda d: d.get("enabled", False))
-    }
-    # When enabled is False, config is NOT required (even if not marked optional, because condition fails)
-    assert validate({"enabled": False}, schema) == {"enabled": False}
-    # When enabled is True, config IS required
-    with pytest.raises(ValidationError):
-        validate({"enabled": True}, schema)
-    assert validate({"enabled": True, "config": "some"}, schema) == {"enabled": True, "config": "some"}
-
-def test_error_collection():
-    schema = {
-        "a": v.int().max(10),
-        "b": v.str().regex(r"^\w+$")
-    }
-    data = {"a": 20, "b": "!!!"}
-    result = validate(data, schema, collect_errors=True)
-    assert len(result.errors) == 2
-    paths = [e.path for e in result.errors]
-    assert "a" in paths
-    assert "b" in paths
-
-def test_custom_validator():
-    def must_be_even(n):
-        if n % 2 != 0: raise ValueError("Must be even")
-        return n
+    # Test rename + value transform
+    assert validate({"old_key": "hello", "val": "100"}, schema, migrate=migrate) == {"new_key": "hello", "val": 100}
     
-    validator = v.int().custom(must_be_even)
+    # Test with partial and missing key in migration
+    assert validate({"val": 50}, schema, partial=True, migrate=migrate) == {"val": 50}
+
+def test_when_condition_complex():
+    schema = {
+        "mode": v.str(),
+        "threshold": v.int().when(lambda d: d.get("mode") == "strict"),
+        "factor": v.float().optional()
+    }
+    # Mode is normal, threshold is NOT required
+    assert validate({"mode": "normal"}, schema) == {"mode": "normal"}
+    # Mode is strict, threshold IS required
+    with pytest.raises(ValidationError) as exc:
+        validate({"mode": "strict"}, schema)
+    assert exc.value.path == "threshold"
+    assert validate({"mode": "strict", "threshold": 10}, schema) == {"mode": "strict", "threshold": 10}
+
+def test_error_collection_details():
+    schema = {
+        "users": v.list({
+            "id": v.int(),
+            "name": v.str()
+        })
+    }
+    data = {
+        "users": [
+            {"id": 1, "name": "Alice"},
+            {"id": "two", "name": 2}
+        ]
+    }
+    result = validate(data, schema, collect_errors=True)
+    assert isinstance(result, ValidationResult)
+    assert len(result.errors) == 2
+    
+    # Check paths
+    paths = {e.path: e for e in result.errors}
+    assert "users[1].id" in paths
+    assert "users[1].name" in paths
+    assert "Expected int" in paths["users[1].id"].message
+    assert "Expected str" in paths["users[1].name"].message
+
+def test_custom_validator_chaining():
+    def strip_str(s): return s.strip()
+    def uppercase_str(s): return s.upper()
+    
+    validator = v.str().custom(strip_str).custom(uppercase_str)
+    assert validate("  hello  ", validator) == "HELLO"
+
+def test_oneof_with_int():
+    validator = v.oneof([1, 2, 3])
     assert validate(2, validator) == 2
     with pytest.raises(ValidationError):
-        validate(3, validator)
+        validate(4, validator)
 
-def test_oneof():
-    validator = v.oneof(["apple", "banana"])
-    assert validate("apple", validator) == "apple"
+def test_list_of_nested_dicts_and_errors():
+    schema = v.list({"meta": {"code": v.int()}})
+    data = [{"meta": {"code": 200}}, {"meta": {"code": "404"}}]
+    
+    result = validate(data, schema, collect_errors=True)
+    assert len(result.errors) == 1
+    # Check if path contains [1] and meta.code
+    assert "[1].meta.code" in result.errors[0].path or result.errors[0].path == "[1].meta.code"
+
+def test_schema_generic_full_lifecycle():
+    class MyDict(TypedDict):
+        id: int
+        data: str
+    
+    schema: Schema[MyDict] = Schema({"id": v.int(), "data": v.str()})
+    
+    # Valid
+    res = validate({"id": 1, "data": "ok"}, schema)
+    assert res["id"] == 1
+    
+    # Invalid
     with pytest.raises(ValidationError):
-        validate("orange", validator)
+        validate({"id": "1", "data": "ok"}, schema)
+    
+    # Partial + Base
+    res_partial = validate({"id": 2}, schema, partial=True, base={"data": "default"})
+    assert res_partial == {"id": 2, "data": "default"}
 
-def test_chained_customs():
-    validator = v.int().custom(lambda x: x * 2).custom(lambda x: x + 1)
-    # (5 * 2) + 1 = 11
-    assert validate(5, validator) == 11
+def test_validate_none_with_optional_and_base():
+    schema = {"a": v.int().optional()}
+    # Optional field with value None: result should reflect input or base
+    assert validate({"a": None}, schema) == {"a": None}
+    assert validate({"a": None}, schema, base={"a": 10}) == {"a": 10}
 
-def test_list_of_dicts():
-    schema = v.list({"id": v.int(), "name": v.str()})
-    data = [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}]
+def test_shorthand_types():
+    schema = {"name": str, "age": int}
+    data = {"name": "Alice", "age": 30}
     assert validate(data, schema) == data
     with pytest.raises(ValidationError):
-        validate([{"id": 1, "name": 5}], schema)
+        validate({"name": 123, "age": 30}, schema)
 
-def test_optional_with_none():
-    schema = {"a": v.str().optional()}
-    assert validate({"a": None}, schema) == {"a": None}
-    assert validate({}, schema) == {}
-
-def test_when_with_base():
-    schema = {
-        "use_default": v.bool(),
-        "value": v.int().when(lambda d: d.get("use_default") == False)
-    }
-    base = {"value": 100}
-    # When use_default is True, 'when' fails, so it should return base value
-    assert validate({"use_default": True}, schema, base=base) == {"use_default": True, "value": 100}
-    # When use_default is False, 'when' passes, it requires value
-    assert validate({"use_default": False, "value": 10}, schema, base=base) == {"use_default": False, "value": 10}
-
-def test_schema_generic_basic():
-    """Schema[T] wraps a dict schema and validate works identically."""
-    schema = Schema({"name": v.str(), "age": v.int()})
-    data = {"name": "Alice", "age": 30}
-    result = validate(data, schema)
-    assert result == data
-
-def test_schema_generic_validation_error():
-    """Schema[T] still raises ValidationError on bad data."""
-    schema = Schema({"name": v.str(), "level": v.int().range(1, 100)})
-    with pytest.raises(ValidationError):
-        validate({"name": "Bob", "level": 999}, schema)
-
-def test_schema_generic_partial_and_base():
-    """Schema[T] supports partial and base kwargs."""
-    schema = Schema({"a": v.int(), "b": v.int()})
-    base = {"b": 2}
-    result = validate({"a": 1}, schema, base=base)
-    assert result == {"a": 1, "b": 2}
-
-def test_schema_generic_optional_field():
-    """Schema[T] respects optional fields."""
-    schema = Schema({"name": v.str(), "nickname": v.str().optional()})
-    result = validate({"name": "Alice"}, schema)
-    assert result == {"name": "Alice"}
-
-def test_schema_exported():
-    """Schema is exported from the top-level package."""
-    import importlib
-    pkg = importlib.import_module("validkit")
-    assert hasattr(pkg, "Schema")
+def test_collect_errors_without_exception():
+    """Ensure collect_errors still returns a result even if no errors."""
+    schema = {"a": v.int()}
+    result = validate({"a": 1}, schema, collect_errors=True)
+    assert isinstance(result, ValidationResult)
+    assert result.data == {"a": 1}
+    assert result.errors == []

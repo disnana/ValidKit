@@ -20,12 +20,11 @@ class Validator:
         self._when_condition = condition
         return self
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> Any:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
         """Base validate method. Subclasses should override this."""
         return self._validate_base(value, data)
 
     def _validate_base(self, value: Any, data: Optional[Dict[str, Any]] = None) -> Any:
-        # if condition is not met, this validator might be skipped or handled by caller
         for check in self._custom_checks:
             value = check(value)
         return value
@@ -39,7 +38,7 @@ class StringValidator(Validator):
         self._regex = re.compile(pattern)
         return self
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> str:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
         if not isinstance(value, str):
             raise TypeError(f"Expected str, got {type(value).__name__}")
         if self._regex and not self._regex.match(value):
@@ -66,7 +65,7 @@ class NumberValidator(Validator):
         self._max = max_val
         return self
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> Union[int, float]:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Union[int, float]:
         if not isinstance(value, self._type_cls):
             raise TypeError(f"Expected {self._type_cls.__name__}, got {type(value).__name__}")
         if self._min is not None and value < self._min:
@@ -76,7 +75,7 @@ class NumberValidator(Validator):
         return cast(Union[int, float], self._validate_base(value, data))
 
 class BoolValidator(Validator):
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> bool:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> bool:
         if not isinstance(value, bool):
             raise TypeError(f"Expected bool, got {type(value).__name__}")
         return cast(bool, self._validate_base(value, data))
@@ -86,18 +85,17 @@ class ListValidator(Validator):
         super().__init__()
         self._item_validator = item_validator
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> List[Any]:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> List[Any]:
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"Expected list, got {type(value).__name__}")
         from .validator import validate_internal
         result = []
         root_data = data if data is not None else {}
         for i, item in enumerate(value):
-            try:
-                result.append(validate_internal(item, self._item_validator, root_data, path_prefix=f"[{i}]"))
-            except Exception:
-                # Re-raise or collect will be handled by validate_internal/caller
-                raise
+            # Use path_prefix to build nested path
+            item_path = f"{path_prefix}[{i}]" if path_prefix else f"[{i}]"
+            res = validate_internal(item, self._item_validator, root_data, path_prefix=item_path, collect_errors=collect_errors, errors=errors)
+            result.append(res)
         return cast(List[Any], self._validate_base(result, data))
 
 class DictValidator(Validator):
@@ -106,7 +104,7 @@ class DictValidator(Validator):
         self._key_type = key_type
         self._value_validator = value_validator
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> Dict[Any, Any]:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Dict[Any, Any]:
         if not isinstance(value, dict):
             raise TypeError(f"Expected dict, got {type(value).__name__}")
         from .validator import validate_internal
@@ -115,10 +113,10 @@ class DictValidator(Validator):
         for k, v in value.items():
             if not isinstance(k, self._key_type):
                 raise TypeError(f"Expected key type {self._key_type.__name__}, got {type(k).__name__}")
-            try:
-                result[k] = validate_internal(v, self._value_validator, root_data, path_prefix=f"{k}")
-            except Exception:
-                raise
+            # Use path_prefix to build nested path
+            item_path = f"{path_prefix}.{k}" if path_prefix else f"{k}"
+            res = validate_internal(v, self._value_validator, root_data, path_prefix=item_path, collect_errors=collect_errors, errors=errors)
+            result[k] = res
         return cast(Dict[Any, Any], self._validate_base(result, data))
 
 class OneOfValidator(Validator):
@@ -126,7 +124,7 @@ class OneOfValidator(Validator):
         super().__init__()
         self._choices = choices
 
-    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None) -> Any:
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
         if value not in self._choices:
             raise ValueError(f"Value '{value}' is not one of {self._choices}")
         return self._validate_base(value, data)

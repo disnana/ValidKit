@@ -91,7 +91,7 @@ def validate_internal(
             return base
 
         try:
-            return schema.validate(value, root_data)
+            return schema.validate(value, root_data, path_prefix=path_prefix, collect_errors=collect_errors, errors=errors)
         except (TypeError, ValueError) as e:
             err_msg = str(e)
             if collect_errors and errors is not None:
@@ -237,14 +237,12 @@ def validate(
                 if isinstance(action, str):
                     data[action] = val
                 elif callable(action):
-                    # We need to decide where the result goes. 
-                    # If migrate says {"timeout": lambda v: f"{v}s"}, it modifies the value but keeps the key?
-                    # Actual request: "timeout": lambda v: f"{v}s" -> value transformation.
-                    # "旧キー名": "新キー名" -> key rename.
-                    # Let's assume if it's a string, it's a rename. If it's a callable, it's a value transform of the SAME key (or should it be rename + transform?)
-                    # Usually migration means "old format to new format".
-                    # Let's support both.
-                    data[old_key] = action(val)
+                    result_action = action(val)
+                    if isinstance(result_action, tuple) and len(result_action) == 2:
+                        new_key, new_val = result_action
+                        data[new_key] = new_val
+                    else:
+                        data[old_key] = result_action
                 # Note: if it's a rename, we might want to transform too.
                 # But the prompt example shows them separately.
 
