@@ -7,6 +7,11 @@ class Validator:
         self._optional = False
         self._custom_checks: List[Callable[[Any], Any]] = []
         self._when_condition: Optional[Callable[[Dict[str, Any]], bool]] = None
+        self._coerce = False
+
+    def coerce(self) -> "Validator":
+        self._coerce = True
+        return self
 
     def optional(self) -> "Validator":
         self._optional = True
@@ -39,6 +44,8 @@ class StringValidator(Validator):
         return self
 
     def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
+        if self._coerce and not isinstance(value, str):
+            value = str(value)
         if not isinstance(value, str):
             raise TypeError(f"Expected str, got {type(value).__name__}")
         if self._regex and not self._regex.match(value):
@@ -66,6 +73,11 @@ class NumberValidator(Validator):
         return self
 
     def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Union[int, float]:
+        if self._coerce and not isinstance(value, self._type_cls):
+            try:
+                value = self._type_cls(value)
+            except (ValueError, TypeError):
+                pass
         if not isinstance(value, self._type_cls):
             raise TypeError(f"Expected {self._type_cls.__name__}, got {type(value).__name__}")
         if self._min is not None and value < self._min:
@@ -76,6 +88,19 @@ class NumberValidator(Validator):
 
 class BoolValidator(Validator):
     def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> bool:
+        if self._coerce and not isinstance(value, bool):
+            if isinstance(value, str):
+                lower_val = value.lower()
+                if lower_val in ("true", "1", "yes", "on"):
+                    value = True
+                elif lower_val in ("false", "0", "no", "off"):
+                    value = False
+            elif isinstance(value, (int, float)):
+                if value == 1:
+                    value = True
+                elif value == 0:
+                    value = False
+
         if not isinstance(value, bool):
             raise TypeError(f"Expected bool, got {type(value).__name__}")
         return cast(bool, self._validate_base(value, data))

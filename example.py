@@ -157,4 +157,25 @@ v3 = validate({"is_premium": True, "expiry_date": "2026-12-31"}, SUBSCRIPTION_SC
 assert v3["expiry_date"] == "2026-12-31"
 log_success("プレミアム: 正しい形式の日付で検証通過。")
 
+# --- 2.6 自動変換 (.coerce) ---
+print("\n[2.6 自動変換 (.coerce)]")
+# 文字列の "123" を数値に、1 を真偽値に変換する例
+COERCE_SCHEMA = {
+    "user_id": v.int().coerce(),
+    "is_active": v.bool().coerce(),
+    "score": v.float().coerce()
+}
+
+input_data = {
+    "user_id": "9999",
+    "is_active": 1,
+    "score": "95.5"
+}
+
+coerced = validate(input_data, COERCE_SCHEMA)
+assert coerced["user_id"] == 9999
+assert coerced["is_active"] is True
+assert coerced["score"] == 95.5
+log_success(f"自動変換後のデータ: {coerced}")
+
 header("すべての検証デモが正常に終了しました。")

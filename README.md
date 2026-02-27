@@ -108,6 +108,7 @@ except ValidationError as e:
 * `.regex(pattern)`: 正規表現チェック
 * `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック
 * `.custom(func)`: 独自の変換・検証ロジックを注入
+* `.coerce()`: 入力値の型を自動的に変換（例: "123" -> 123）
 
 ---
 
@@ -180,6 +181,30 @@ migrated = validate(
     }
 )
 ```
+
+### 自動変換 (Coercion)
+
+入力データの型が期待される型と異なる場合に、自動的に変換を試行します。
+
+```python
+# 文字列を整数へ、数値を真偽値へ自動変換
+SCHEMA = {
+    "id": v.int().coerce(),
+    "is_active": v.bool().coerce()
+}
+
+data = {"id": "1001", "is_active": 1}
+validated = validate(data, SCHEMA)
+# -> {'id': 1001, 'is_active': True}
+```
+
+各バリデータの変換ルール：
+- `v.str().coerce()`: `str(value)` による変換
+- `v.int().coerce()`: `int(value)` による変換
+- `v.float().coerce()`: `float(value)` による変換
+- `v.bool().coerce()`: 
+    - 文字列: `"true"`, `"1"`, `"yes"`, `"on"` -> `True` / `"false"`, `"0"`, `"no"`, `"off"` -> `False`
+    - 数値: `1` -> `True` / `0` -> `False`
 
 ---
 
