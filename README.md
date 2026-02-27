@@ -104,7 +104,9 @@ except ValidationError as e:
 
 ### 修飾メソッド
 * `.optional()`: 必須でないフィールドにする
-* `.default(value)`: 値がない場合のデフォルト値を指定（※実装予定/ベースマージ推奨）
+* `.default(value)`: 値がない場合のデフォルト値を指定（自動的に `.optional()` 扱いとなる）
+* `.examples(list)`: サンプル生成やドキュメント用の具体例を設定
+* `.description(str)`: フィールドの説明文を設定
 * `.regex(pattern)`: 正規表現チェック
 * `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック
 * `.custom(func)`: 独自の変換・検証ロジックを注入
@@ -152,9 +154,47 @@ plain_schema = {"name": v.str(), "level": v.int()}
 result: UserDict = validate(data, plain_schema)  # IDE への型ヒントは変数側で提供
 ```
 
-### 部分更新とデフォルト値のマージ
+### デフォルト値の自動補完 (`.default`)
 
-設定ファイルの一部だけをユーザーが変更した場合などに便利です。
+スキーマ定義時にデフォルト値を設定しておくと、データにそのキーが含まれていない場合に自動的に補完されます。
+
+```python
+SCHEMA = {
+    "host": v.str().default("localhost"),
+    "port": v.int().default(5432)
+}
+
+# どちらも未指定でも、デフォルト値が補完される
+result = validate({}, SCHEMA)
+# -> {'host': 'localhost', 'port': 5432}
+```
+
+ネストされた辞書やリスト内でも同様に動作します。
+
+### サンプルデータの自動生成 (`generate_sample`)
+
+定義したスキーマから、仕様書の雛形や設定ファイルのテンプレートとして使えるサンプルデータを自動生成できます。
+
+```python
+SCHEMA = Schema({
+    "app_name": v.str().examples(["MyAwesomeApp"]),
+    "port": v.int().default(8080).description("待機ポート"),
+    "debug": v.bool().default(False)
+})
+
+# スキーマからサンプルを辞書形式で取得
+sample = SCHEMA.generate_sample()
+# -> {'app_name': 'MyAwesomeApp', 'port': 8080, 'debug': False}
+```
+
+生成の優先順位:
+1. `.default()` で設定された値
+2. `.examples()` リストの最初の要素
+3. 各型のダミー値（`str`: "example", `int`: 0, `bool`: False 等）
+
+### 部分更新とデフォルト値のマージ (base引数)
+
+既存の辞書データを「ベース」として、入力された不完全なデータをマージする場合に便利です。これは `.default()` よりも優先されます。
 
 ```python
 DEFAULT_CONFIG = {"言語": "English", "音量": 50}
