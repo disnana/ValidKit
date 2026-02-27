@@ -1,182 +1,121 @@
 import sys
 import os
+from typing import TypedDict
 
 # Add src to path to import validkit
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-from validkit import v, validate, ValidationError
+from validkit import v, validate, ValidationError, Schema, ValidationResult
 
-# カスタムパース関数の例
-def parse_time_str(s):
-    if not any(s.endswith(unit) for unit in ['s', 'm', 'h', 'd']):
-        raise ValueError("無効な時間形式です")
-    return s
+# ==========================================
+# 1. v1.0.0 の基本機能 (Basic Features)
+# ==========================================
+print("--- 1. v1.0.0 基本機能 ---")
 
-# カスタム型定義
-TimeStr = v.str().regex(r'^\d+[smhd]$').custom(parse_time_str)
-PunishmentList = v.list(v.oneof(['timeout', 'kick', 'ban', 'delete']))
-
-# スキーマ定義
-GUILD_SETTINGS_SCHEMA = {
-    "token": {
-        "検知": v.bool(),
-        "検知レベル": v.int().range(1, 3),
-        "処罰": PunishmentList,
-        "期間": TimeStr,
-        "違反回数に基づく処罰": v.dict(int, PunishmentList),
-        "検知除外": {
-            "ユーザー・ボット・webhook": v.list(int),
-            "チャンネル": v.list(int)
-        },
-        "チェック": v.bool()
-    },
-    "権限": {
-        "許可ユーザー": v.list(int),
-        "許可ロール": v.list(int),
-        "オーナーのみ変更を許可": v.bool()
-    },
-    "言語": v.oneof(["日本語", "English"]),
-    "発言safety": {
-        "検知": v.bool(),
-        "検知対象カテゴリ": v.list(v.oneof([
-            "TOXICITY", "SEVERE_TOXICITY", "IDENTITY_ATTACK", 
-            "INSULT", "PROFANITY", "THREAT"
-        ])),
-        "スコア": v.float().range(0.0, 1.0),
-        "カテゴリ毎の設定": v.dict(str, v.float().range(0.0, 1.0)),
-        "処罰": v.dict(str, TimeStr).optional(),
-        "違反回数に基づく加算処罰": v.bool(),
+# スキーマ定義：辞書の形がそのままバリデーション構造になります
+BASIC_SCHEMA = {
+    "ユーザー名": v.str().regex(r"^\w{3,15}$"),
+    "レベル": v.int().range(1, 100),
+    "スキル": v.list(v.oneof(["火", "水", "風"])),
+    "設定": {
         "通知": v.bool(),
-        "不適切なメッセージを表示": v.bool(),
-        "処罰内容を表示": v.bool(),
-        "処罰時間を表示": v.bool(),
-        "送信者名を表示": v.bool(),
-        "メッセージ種類": v.oneof(["text", "embed", "embed-webhook"]),
-        "メッセージの遅延削除": v.bool(),
-        "メッセージの遅延削除時間": TimeStr.when(
-            lambda d: d.get("発言safety", {}).get("メッセージの遅延削除", False)
-        ),
-        "除外": {
-            "ユーザー": v.list(int),
-            "チャンネル": v.list(int),
-            "ロール": v.list(int)
-        }
+        "言語": v.oneof(["日本語", "English"]).optional()
     }
 }
 
-# テスト用データ
-user_config = {
-    "token": {
-        "検知": True,
-        "検知レベル": 2,
-        "処罰": ["timeout", "ban"],
-        "期間": "1h",
-        "違反回数に基づく処罰": {3: ["kick"], 5: ["ban"]},
-        "検知除外": {
-            "ユーザー・ボット・webhook": [123456789],
-            "チャンネル": []
-        },
-        "チェック": False
-    },
-    "権限": {
-        "許可ユーザー": [],
-        "許可ロール": [987654321],
-        "オーナーのみ変更を許可": True
-    },
-    "言語": "日本語",
-    "発言safety": {
-        "検知": True,
-        "検知対象カテゴリ": ["TOXICITY", "INSULT"],
-        "スコア": 0.8,
-        "カテゴリ毎の設定": {"TOXICITY": 0.7},
-        "違反回数に基づく加算処罰": False,
-        "通知": True,
-        "不適切なメッセージを表示": True,
-        "処罰内容を表示": True,
-        "処罰時間を表示": True,
-        "送信者名を表示": True,
-        "メッセージ種類": "embed",
-        "メッセージの遅延削除": True,
-        "メッセージの遅延削除時間": "10s",
-        "除外": {"ユーザー": [], "チャンネル": [], "ロール": []}
-    }
+data = {
+    "ユーザー名": "nana_kit",
+    "レベル": 50,
+    "スキル": ["火", "風"],
+    "設定": {"通知": True}  # 言語は optional なので省略可能
 }
 
-print("--- 基本的な検証 ---")
 try:
-    validated = validate(user_config, GUILD_SETTINGS_SCHEMA)
-    print("検証成功！")
+    validated = validate(data, BASIC_SCHEMA)
+    print(f"検証成功！ユーザー: {validated['ユーザー名']}, レベル: {validated['レベル']}")
 except ValidationError as e:
-    print(f"設定エラー: {e.path} - {e.message}")
+    print(f"エラー発生箇所: {e.path} - {e.message}")
 
-print("\n--- 部分更新とデフォルト値マージ ---")
-DEFAULT_CONFIG = {"言語": "English", "権限": {"オーナーのみ変更を許可": False}}
-partial_config = {"言語": "日本語"}
-updated = validate(
-    partial_config, 
-    GUILD_SETTINGS_SCHEMA, 
-    partial=True,
-    base=DEFAULT_CONFIG
-)
-print(f"更新後の言語: {updated['言語']}")
-print(f"デフォルトから継承された権限: {updated['権限']['オーナーのみ変更を許可']}")
 
-print("\n--- マイグレーション ---")
-old_config = {"timeout": 60, "旧キー": "some_value"}
-NEW_SCHEMA = {"timeout": v.str(), "新キー": v.str()}
-migrated = validate(old_config, NEW_SCHEMA, partial=True, migrate={
-    "旧キー": "新キー",
-    "timeout": lambda v: f"{v}s"
+# ==========================================
+# 2. v1.1.0 の高度な機能 (Advanced Features)
+# ==========================================
+print("\n--- 2. v1.1.0 高度な機能 ---")
+
+# --- 2.1 Schema[T] による型推論と IDE 補完 ---
+class UserConfig(TypedDict):
+    name: str
+    volume: int
+    dark_mode: bool
+
+# Schema[T] でラップすることで、戻り値に型情報が付与されます
+CONFIG_SCHEMA: Schema[UserConfig] = Schema({
+    "name": v.str(),
+    "volume": v.int().range(0, 100),
+    "dark_mode": v.bool()
 })
-print(f"マイグレーション後: {migrated}")
 
-print("\n--- 詳細なエラー情報 ---")
-invalid_config = {
-    "token": {"検知レベル": 5, "期間": "invalid"},
-    "言語": "フランス語"
-}
-result = validate(invalid_config, GUILD_SETTINGS_SCHEMA, partial=True, collect_errors=True)
-if result.errors:
-    for err in result.errors:
-        print(f"エラー: {err}")
-else:
-    print("エラーが見つかりませんでした")
+config_data = {"name": "Player1", "volume": 80, "dark_mode": True}
+result = validate(config_data, CONFIG_SCHEMA)
+# IDE 上で result["name"] や result["volume"] が補完されます
+print(f"型安全な検証結果: {result['name']} (音量: {result['volume']})")
 
-print("\n--- 深層ネストの検証 ---")
-DEEP_SCHEMA = {
-    "level1": {
-        "level2": {
-            "level3": {
-                "level4": {
-                    "level5": v.str().regex(r"^deep$")
-                }
-            }
-        }
+
+# --- 2.2 partial=True と base によるデフォルト値マージ ---
+print("\n--- 2.2 部分更新とデフォルト値マージ ---")
+DEFAULT_CONFIG = {"name": "Guest", "volume": 50, "dark_mode": False}
+user_patch = {"volume": 90}  # 音量だけ変更したい
+
+# partial=True で不足キーを許容し、base でデフォルトを補完
+merged = validate(user_patch, CONFIG_SCHEMA, partial=True, base=DEFAULT_CONFIG)
+print(f"マージ後の設定: {merged}")
+
+
+# --- 2.3 migrate によるデータ変換 ---
+print("\n--- 2.3 データ移行 (Migration) ---")
+legacy_data = {"old_name": "LegacyUser", "sound_level": 40, "dark_mode": "on"}
+
+# キー名の変更や、値の変換を移行時に行います
+migrated = validate(
+    legacy_data,
+    CONFIG_SCHEMA,
+    migrate={
+        "old_name": "name",           # キーのリネーム
+        "sound_level": "volume",      # キーのリネーム
+        "dark_mode": lambda v: v == "on"  # 値の変換
     }
+)
+print(f"移行後のデータ: {migrated}")
+
+
+# --- 2.4 collect_errors=True によるエラーの一括取得 ---
+print("\n--- 2.4 エラーの一括収集 ---")
+invalid_data = {
+    "name": 123,      # 文字列であるべき
+    "volume": 150,    # 100以下であるべき
+    "dark_mode": "no" # boolであるべき
 }
-deep_data = {"level1": {"level2": {"level3": {"level4": {"level5": "deep"}}}}}
+
+res: ValidationResult = validate(invalid_data, CONFIG_SCHEMA, collect_errors=True)
+if res.errors:
+    print(f"合計 {len(res.errors)} 件のエラーが見つかりました:")
+    for err in res.errors:
+        print(f"  - [{err.path}]: {err.message} (値: {err.value})")
+
+
+# --- 2.5 .when() による条件付きバリデーション ---
+print("\n--- 2.5 条件付きバリデーション ---")
+ADVANCED_SCHEMA = {
+    "enable_logging": v.bool(),
+    "log_path": v.str().when(lambda d: d.get("enable_logging") is True)
+}
+
+# ログ有効時は log_path が必須
 try:
-    validate(deep_data, DEEP_SCHEMA)
-    print("5階層のネスト検証に成功！")
+    validate({"enable_logging": True}, ADVANCED_SCHEMA)
 except ValidationError as e:
-    print(f"深層ネストエラー: {e.path} - {e.message}")
+    print(f"条件付きエラー: {e.path} - {e.message} (enable_logging が True なので log_path が必要)")
 
-# さらに深い動的なネストの例
-def create_deep_schema(depth):
-    schema = v.str()
-    for _ in range(depth):
-        schema = {"next": schema}
-    return schema
-
-def create_deep_data(depth, value):
-    data = value
-    for _ in range(depth):
-        data = {"next": data}
-    return data
-
-deep_depth = 20
-try:
-    validate(create_deep_data(deep_depth, "hello"), create_deep_schema(deep_depth))
-    print(f"{deep_depth}階層の動的ネスト検証に成功！")
-except ValidationError as e:
-    print(f"{deep_depth}階層ネストエラー: {e.path} - {e.message}")
+# ログ無効時は log_path は不要
+success = validate({"enable_logging": False}, ADVANCED_SCHEMA)
+print(f"成功 (ログ無効時は log_path 不要): {success}")
