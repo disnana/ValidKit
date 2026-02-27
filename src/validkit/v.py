@@ -3,25 +3,102 @@ import builtins
 from typing import Any, Callable, Dict, List, Union, Type, Optional, cast
 
 class Validator:
+    """
+    すべてのバリデータの基底クラス。
+
+    各バリデータはチェーン形式でオプションを組み合わせることができます::
+
+        v.str().default("anonymous").description("ユーザー名").examples(["alice", "bob"])
+    """
+
     def __init__(self) -> None:
         self._optional = False
         self._custom_checks: List[Callable[[Any], Any]] = []
         self._when_condition: Optional[Callable[[Dict[str, Any]], bool]] = None
         self._coerce = False
+        self._has_default = False
+        self._default_value: Any = None
+        self._examples: List[Any] = []
+        self._description: Optional[str] = None
 
     def coerce(self) -> "Validator":
+        """入力値を対象型に自動変換します (例: str "123" -> int 123)。"""
         self._coerce = True
         return self
 
     def optional(self) -> "Validator":
+        """このフィールドを省略可能にします。"""
         self._optional = True
         return self
 
+    def default(self, value: Any) -> "Validator":
+        """
+        フィールドが欠損している場合に使用するデフォルト値を設定します。
+        .default() を設定したフィールドは自動的にオプショナル扱いになります。
+
+        引数が与えられた場合は入力値が優先されます (後方互換)。
+
+        Args:
+            value: 欠損時に補完する値。
+
+        Example::
+
+            v.str().default("guest")
+            v.int().range(1, 100).default(10)
+        """
+        self._has_default = True
+        self._default_value = value
+        self._optional = True
+        return self
+
+    def examples(self, examples_list: List[Any]) -> "Validator":
+        """
+        このフィールドに入り得る値の例をリストで指定します。
+        generate_sample() 実行時や、ドキュメント生成時の補助情報として使用されます。
+
+        Args:
+            examples_list: 具体的な値の例のリスト。
+
+        Example::
+
+            v.str().examples(["ap-northeast-1", "us-west-2"])
+            v.int().range(1, 65535).examples([80, 443, 8080])
+        """
+        self._examples = examples_list
+        return self
+
+    def description(self, desc: str) -> "Validator":
+        """
+        フィールドの説明文を設定します。
+        generate_sample() の出力やスキーマドキュメント生成の補助情報として使用されます。
+
+        Args:
+            desc: フィールドの説明文。
+
+        Example::
+
+            v.str().description("ユーザーの表示名 (3〜30文字)")
+        """
+        self._description = desc
+        return self
+
     def custom(self, func: Callable[[Any], Any]) -> "Validator":
+        """カスタムのバリデーション/変換関数を追加します。"""
         self._custom_checks.append(func)
         return self
 
     def when(self, condition: Callable[[Dict[str, Any]], bool]) -> "Validator":
+        """
+        条件付き必須バリデーションを設定します。
+        条件関数が True を返す場合のみ、このフィールドが必須になります。
+
+        Args:
+            condition: 親辞書全体を受け取り bool を返す関数。
+
+        Example::
+
+            v.str().when(lambda d: d.get("is_premium") is True)
+        """
         self._when_condition = condition
         return self
 

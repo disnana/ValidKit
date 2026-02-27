@@ -2,3 +2,4 @@
 .benchmarks/
 .idea/
 dist/
+test.py

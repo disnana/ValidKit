@@ -11,7 +11,7 @@ if sys.platform == "win32":
 # Add src to path to import validkit
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-from validkit import v, validate, ValidationError, Schema, ValidationResult
+from src.validkit import v, validate, ValidationError, Schema, ValidationResult
 
 def header(text: str):
     print(f"\n{'='*20} {text} {'='*20}")
@@ -179,3 +179,82 @@ assert coerced["score"] == 95.5
 log_success(f"自動変換後のデータ: {coerced}")
 
 header("すべての検証デモが正常に終了しました。")
+
+# ==========================================
+# 3. v1.2.0 新機能: .default() / .examples() / .description() / generate_sample()
+# ==========================================
+header("3. v1.2.0 新機能 (デフォルト値・サンプル生成)")
+
+from typing import List
+
+class NodeConfig(TypedDict):
+    ip: str
+    role: str
+
+class ClusterConfig(TypedDict):
+    cluster_name: str
+    region: str
+    auto_scale: bool
+    nodes: List[NodeConfig]
+
+# --- 3.1 スキーマ定義 (.default / .examples / .description が使えるようになる) ---
+print("[3.1 スキーマ定義]")
+
+CLUSTER_SCHEMA: Schema[ClusterConfig] = Schema({
+    # 必須フィールド: .examples() で「こんな値が入る」を提示
+    "cluster_name": v.str().examples(["myapp-prod", "myapp-staging"]).description("クラスタの識別名"),
+
+    # オプションフィールド: .default() でデフォルト値を設定
+    "region": v.str().default("ap-northeast-1").examples(["ap-northeast-1", "us-west-2"]).description("デプロイ先リージョン"),
+    "auto_scale": v.bool().default(True).description("オートスケールの有効化"),
+
+    # ネスト構造にも同様に適用可能
+    "nodes": v.list({
+        "ip": v.str().examples(["192.168.1.10", "10.0.0.5"]).description("ノードのIPアドレス"),
+        "role": v.str().default("worker").examples(["worker", "master"]).description("ノードのロール"),
+    }).description("クラスタを構成するノードのリスト"),
+})
+
+log_success("スキーマ定義完了。")
+
+# --- 3.2 generate_sample(): スキーマから仕様書代わりのサンプルデータを生成 ---
+print("\n[3.2 generate_sample() によるサンプル自動生成]")
+# 優先順位: .default() > .examples() の先頭 > 型のダミー値
+sample = CLUSTER_SCHEMA.generate_sample()
+print(f"  cluster_name = {sample['cluster_name']!r:20s} # .examples() の先頭")
+print(f"  region       = {sample['region']!r:20s} # .default() 値")
+print(f"  auto_scale   = {sample['auto_scale']!r:20s} # .default() 値")
+print(f"  nodes[0].role= {sample['nodes'][0]['role']!r:20s} # .default() 値 (ネスト内部)")
+assert sample["cluster_name"] == "myapp-prod"  # examples の先頭
+assert sample["region"] == "ap-northeast-1"    # default 値
+assert sample["auto_scale"] is True            # default 値
+assert sample["nodes"][0]["role"] == "worker"  # ネスト内の default 値
+log_success("generate_sample() によるサンプルデータの生成に成功 (ネスト含む)。")
+
+# --- 3.3 .default() による自動補完のデモ (後方互換確認含む) ---
+print("\n[3.3 .default() による欠損キーの自動補完]")
+
+# ケース1: 通常入力 (既存コードと全く同じ動作 → 後方互換)
+full_input: ClusterConfig = {
+    "cluster_name": "full-cluster",
+    "region": "us-west-2",        # 明示的に指定した場合は入力値が優先
+    "auto_scale": False,
+    "nodes": [{"ip": "10.0.0.1", "role": "master"}],
+}
+r1 = validate(full_input, CLUSTER_SCHEMA)
+assert r1["region"] == "us-west-2"    # 入力値が優先、デフォルト値で上書きされない
+assert r1["auto_scale"] is False      # 同上
+log_success(f"[後方互換] 入力値が優先されること確認: region={r1['region']!r}")
+
+# ケース2: 必須フィールドだけ入力し、残りはデフォルト補完
+minimal_input = {
+    "cluster_name": "minimal-cluster",
+    "nodes": [{"ip": "192.168.0.10"}],  # role が欠損 → ネスト内もデフォルト補完
+}
+r2 = validate(minimal_input, CLUSTER_SCHEMA)
+assert r2["region"] == "ap-northeast-1"  # デフォルト補完
+assert r2["auto_scale"] is True          # デフォルト補完
+assert r2["nodes"][0]["role"] == "worker"  # ネスト内部のデフォルト補完
+log_success(f"欠損キーがデフォルト値で補完: region={r2['region']!r}, nodes[0].role={r2['nodes'][0]['role']!r}")
+
+header("v1.2.0 の全デモが正常に終了しました。")

@@ -16,7 +16,8 @@ T = TypeVar("T")
 
 
 class Schema(Generic[T]):
-    """A typed wrapper around a dict schema that carries type information for IDE completion.
+    """
+    型情報を持つスキーマの薄いラッパーです。IDE による型補完を有効にするために使用します。
 
     Usage::
 
@@ -30,12 +31,43 @@ class Schema(Generic[T]):
         SCHEMA: Schema[UserDict] = Schema({"name": v.str(), "age": v.int()})
 
         data: UserDict = {"name": "Alice", "age": 30}
-        result = validate(data, SCHEMA)  # inferred as UserDict by the IDE
-        print(result["name"])            # IDE completes "name" / "age"
+        result = validate(data, SCHEMA)  # IDE は UserDict として推論します
+        print(result["name"])            # IDE による "name" / "age" の補完が有効
+
+    各フィールドのバリデータに `.default()`, `.examples()`, `.description()` を設定することで、
+    より豊かなスキーマ定義が可能になります。
     """
 
     def __init__(self, schema: Dict[str, Any]) -> None:
         self._schema = schema
+
+    def generate_sample(self) -> Dict[str, Any]:
+        """
+        スキーマ定義から代表的なサンプルデータ (dict) を自動生成します。
+
+        値の優先順位:
+
+        1. `.default(value)` が設定されている場合 → そのデフォルト値
+        2. `.examples([...])` が設定されている場合 → リストの最初の要素
+        3. どちらも設定されていない場合 → 型に応じたダミー値 (str: "example", int: 0 など)
+
+        ネストされた辞書スキーマやリストスキーマも再帰的に処理されます。
+
+        Returns:
+            Dict[str, Any]: サンプルデータの辞書。
+
+        Example::
+
+            SCHEMA = Schema({
+                "host": v.str().default("localhost"),
+                "port": v.int().default(5432).examples([3306, 5432, 5433]),
+                "ssl":  v.bool().default(False),
+            })
+
+            sample = SCHEMA.generate_sample()
+            # -> {"host": "localhost", "port": 5432, "ssl": False}
+        """
+        return _generate_sample(self._schema)
 
 class ValidationError(Exception):
     def __init__(self, message: str, path: str = "", value: Any = None) -> None:
@@ -128,8 +160,13 @@ def validate_internal(
 
             if key not in input_dict:
                 if sub_base is not None:
-                    # Use base value
+                    # base 引数が優先
                     result[key] = sub_base
+                    continue
+
+                # .default() が設定されている場合はデフォルト値を補完
+                if isinstance(sub_schema, Validator) and sub_schema._has_default:
+                    result[key] = sub_schema._default_value
                     continue
                 
                 # Check condition for requirement
@@ -167,6 +204,63 @@ def validate_internal(
 
     # 4. Literal / Pre-validated?
     return value
+
+
+# --- サンプルデータ生成ヘルパー ---
+
+# 型ごとのデフォルトのダミー値
+_TYPE_DUMMY: Dict[Any, Any] = {
+    str: "example",
+    int: 0,
+    float: 0.0,
+    bool: False,
+}
+
+def _generate_sample(schema: Any) -> Any:
+    """
+    スキーマ定義を再帰的に走査し、サンプルデータを生成します。
+    Schema.generate_sample() の内部実装です。
+
+    Args:
+        schema: dict スキーマ、Validator インスタンス、または Python 型。
+
+    Returns:
+        生成されたサンプル値。
+    """
+    # 1. Python 型のショートハンド
+    if isinstance(schema, type) and schema in _TYPE_DUMMY:
+        return _TYPE_DUMMY[schema]
+
+    # 2. Validator オブジェクト
+    if isinstance(schema, Validator):
+        # 優先順位: default > examples の先頭 > 型ダミー
+        if schema._has_default:
+            return schema._default_value
+        if schema._examples:
+            return schema._examples[0]
+        # 型ダミーを型名から推定
+        from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator
+        if isinstance(schema, StringValidator):
+            return "example"
+        if isinstance(schema, NumberValidator):
+            return 0 if schema._type_cls is int else 0.0
+        if isinstance(schema, BoolValidator):
+            return False
+        if isinstance(schema, OneOfValidator):
+            return schema._choices[0] if schema._choices else None
+        if isinstance(schema, ListValidator):
+            inner = _generate_sample(schema._item_validator)
+            return [inner]
+        if isinstance(schema, DictValidator):
+            inner = _generate_sample(schema._value_validator)
+            return {"key": inner}
+        return None
+
+    # 3. dict スキーマ → 再帰的に走査
+    if isinstance(schema, dict):
+        return {key: _generate_sample(sub) for key, sub in schema.items()}
+
+    return None
 
 if TYPE_CHECKING:
     # Overload definitions are used by type checkers only and skipped at runtime
