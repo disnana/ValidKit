@@ -31,7 +31,9 @@ T = TypeVar("T")
 # Python 3.10+ introduced types.UnionType for PEP 604 (T | None) syntax.
 # On Python 3.9, types.UnionType does not exist; capture it once at module
 # load time so that _type_hint_to_validator() never accesses it at call time.
-_UnionType: type | None = getattr(_types, "UnionType", None)
+# Note: the annotation uses Optional[type] (not `type | None`) so the line
+# itself is valid on Python 3.9 where PEP 604 runtime unions don't exist.
+_UnionType: Optional[type] = getattr(_types, "UnionType", None)
 
 # Basic Python types supported as schema shorthand (str, int, float, bool)
 _BASIC_TYPES = (str, int, float, bool)

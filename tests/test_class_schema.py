@@ -1450,3 +1450,60 @@ class TestPEP604Python39Compatibility:
             assert vmod._UnionType is None, (
                 "On Python < 3.10, _UnionType must be None"
             )
+
+
+# ---------------------------------------------------------------------------
+# TDD Cycle 5: _UnionType annotation must not use PEP 604 (T | None) syntax
+# ---------------------------------------------------------------------------
+
+class TestUnionTypeAnnotationPython39Safe:
+    """_UnionType の型アノテーション `type | None` は Python 3.9 で
+    `TypeError` を発生させる (PEP 604 は実行時注釈としては 3.10+ のみ対応)。
+    正しくは `Optional[type]` を使う必要がある。"""
+
+    def test_union_type_annotation_does_not_use_pep604_syntax(self):
+        """validator.py の _UnionType アノテーションが PEP 604 記法でないことを検証する。
+        `type | None` は Python 3.9 の import 時に TypeError を発生させる。"""
+        import ast
+        import pathlib
+        import validkit.validator as vmod
+
+        # Locate the source file dynamically so this test works in any environment
+        validator_src = pathlib.Path(vmod.__file__).read_text(encoding="utf-8")
+
+        tree = ast.parse(validator_src)
+
+        pep604_union_annotations: List[str] = []
+        for node in ast.walk(tree):
+            # AnnAssign: variable: annotation = value
+            if not isinstance(node, ast.AnnAssign):
+                continue
+            # Check if the target is _UnionType
+            if not (isinstance(node.target, ast.Name) and node.target.id == "_UnionType"):
+                continue
+            # BinOp with BitOr is the AST form of PEP 604 T | U
+            if isinstance(node.annotation, ast.BinOp) and isinstance(
+                node.annotation.op, ast.BitOr
+            ):
+                pep604_union_annotations.append(ast.unparse(node))
+
+        assert not pep604_union_annotations, (
+            f"_UnionType uses PEP 604 (T | None) syntax in its annotation, "
+            f"which causes TypeError on Python 3.9: {pep604_union_annotations}. "
+            f"Use Optional[type] instead."
+        )
+
+    def test_validator_module_importable_when_union_type_is_none(self):
+        """_UnionType が None のときでも validkit.validator が正常にインポートできる。
+        (Python 3.9 シミュレーション)"""
+        import validkit.validator as vmod
+
+        original = vmod._UnionType
+        try:
+            vmod._UnionType = None
+            # Re-accessing module attributes must not raise
+            assert hasattr(vmod, "_is_class_schema")
+            assert hasattr(vmod, "_class_to_schema")
+            assert hasattr(vmod, "_type_hint_to_validator")
+        finally:
+            vmod._UnionType = original
