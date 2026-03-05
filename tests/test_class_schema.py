@@ -2,7 +2,7 @@
 tests/test_class_schema.py
 クラス記法によるスキーマ定義のテスト:
   - 型アノテーション (str / int / float / bool) からのスキーマ生成
-  - typing モジュールのアノテーション (Optional / List / Dict / Union)
+  - typing モジュールのアノテーション (Optional / List / Dict)
   - Python 3.9+ 組み込みジェネリクス (list[T] / dict[K, V])
   - カスタム型 (original class) の isinstance バリデーション
   - クラス属性をデフォルト値として使用
@@ -10,6 +10,8 @@ tests/test_class_schema.py
   - v.instance() ビルダー
   - partial / base / collect_errors との組み合わせ
   - Schema.generate_sample() との組み合わせ
+  - 空クラスのスキーマとしての動作
+  - サポート外の型 (non-optional Union) の明示的エラー
 """
 
 import datetime
@@ -867,3 +869,125 @@ class TestEndToEndClassSchemaResponse:
             "ssl": False,
             "timeout": 30,
         }
+
+
+# ---------------------------------------------------------------------------
+# Fix 5: 非 Optional の Union[T1, T2] は明示的 TypeError を送出する
+# ---------------------------------------------------------------------------
+
+class TestNonOptionalUnionRaisesError:
+    """非 Optional な Union[T1, T2,...] は _type_hint_to_validator() / _class_to_schema() で
+    TypeError を送出し、サイレントパススルーにならないことを検証するテスト群。"""
+
+    def test_non_optional_union_raises_type_error_via_class_to_schema(self):
+        """Union[int, str] アノテーションはクラス記法スキーマ生成時に TypeError を送出する"""
+        from typing import Union
+        from validkit.validator import _class_to_schema
+
+        class BadSchema:
+            value: Union[int, str]
+
+        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+            _class_to_schema(BadSchema)
+
+    def test_non_optional_union_raises_type_error_via_type_hint_to_validator(self):
+        """_type_hint_to_validator() に直接 Union[int, str] を渡しても TypeError が送出される"""
+        from typing import Union
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+            _type_hint_to_validator(Union[int, str])
+
+    def test_optional_t_does_not_raise(self):
+        """Optional[T] (= Union[T, None]) は正常に動作し TypeError を送出しない"""
+        from validkit.validator import _type_hint_to_validator
+        from typing import Optional
+
+        val = _type_hint_to_validator(Optional[str])
+        assert val._optional is True
+
+    def test_union_with_none_only_as_non_none_still_raises(self):
+        """Union[int, str, float] (None なし) でも TypeError を送出する"""
+        from typing import Union
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+            _type_hint_to_validator(Union[int, str, float])
+
+    def test_validate_with_class_with_non_optional_union_raises(self):
+        """validate() にクラス記法スキーマを渡したとき Union[T1,T2] フィールドが TypeError になる"""
+        from typing import Union
+
+        class Config:
+            host: Union[str, bytes]
+
+        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+            validate({"host": "db"}, Config)
+
+
+# ---------------------------------------------------------------------------
+# Fix 6: 空クラスはクラス記法スキーマとして {} と同等に扱われる
+# ---------------------------------------------------------------------------
+
+class TestEmptyClassSchema:
+    """空クラス (アノテーションも Validator 属性もない) をスキーマとして渡したとき、
+    空スキーマ {} と同等に動作することを検証するテスト群。"""
+
+    def test_empty_class_is_detected_as_class_schema(self):
+        """_is_class_schema() が空クラスを True と判定する"""
+        from validkit.validator import _is_class_schema
+
+        class Empty:
+            pass
+
+        assert _is_class_schema(Empty) is True
+
+    def test_empty_class_produces_empty_dict_schema(self):
+        """_class_to_schema() が空クラスから空辞書を返す"""
+        from validkit.validator import _class_to_schema
+
+        class Empty:
+            pass
+
+        assert _class_to_schema(Empty) == {}
+
+    def test_validate_with_empty_class_accepts_any_data(self):
+        """空クラスをスキーマとして validate() に渡すと、スキーマ外のキーは除外されて空辞書が返る"""
+        class Empty:
+            pass
+
+        # Empty schema {} strips all unknown keys — consistent with dict schema behavior
+        result = validate({"foo": 1, "bar": "baz"}, Empty)
+        assert result == {}
+
+    def test_validate_with_empty_class_accepts_empty_data(self):
+        """空クラスをスキーマとして validate() に渡すと、空辞書でも通過する"""
+        class Empty:
+            pass
+
+        result = validate({}, Empty)
+        assert result == {}
+
+    def test_basic_types_are_not_class_schemas(self):
+        """基本型 (str / int / float / bool) は _is_class_schema() で False になる"""
+        from validkit.validator import _is_class_schema
+
+        for t in (str, int, float, bool):
+            assert _is_class_schema(t) is False, f"{t} should not be a class schema"
+
+    def test_validator_subclass_is_not_class_schema(self):
+        """Validator のサブクラスは _is_class_schema() で False になる"""
+        from validkit.validator import _is_class_schema
+        from validkit.v import StringValidator
+
+        assert _is_class_schema(StringValidator) is False
+
+    def test_generate_sample_from_empty_class_returns_empty_dict(self):
+        """空クラスを Schema でラップした generate_sample() は空辞書を返す"""
+        from validkit.validator import _class_to_schema
+
+        class Empty:
+            pass
+
+        schema = Schema(_class_to_schema(Empty))
+        assert schema.generate_sample() == {}

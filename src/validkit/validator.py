@@ -35,9 +35,10 @@ def _is_class_schema(schema: Any) -> bool:
     """Return True if *schema* is a class that should be treated as a class-based schema.
 
     A class qualifies when it:
-    - is a plain class (not one of the basic shorthand types),
-    - is not a Validator subclass, and
-    - either declares ``__annotations__`` or has at least one Validator class attribute.
+    - is a plain class (not one of the basic shorthand types), and
+    - is not a Validator subclass.
+
+    An empty class (no annotations, no Validator attributes) is treated as an empty schema.
     """
     if not isinstance(schema, type):
         return False
@@ -45,13 +46,7 @@ def _is_class_schema(schema: Any) -> bool:
         return False
     if issubclass(schema, Validator):
         return False
-    if hasattr(schema, "__annotations__"):
-        return True
-    return any(
-        isinstance(vars(schema).get(k), Validator)
-        for k in vars(schema)
-        if not k.startswith("_")
-    )
+    return True
 
 
 class Schema(Generic[T]):
@@ -168,8 +163,12 @@ def _type_hint_to_validator(
             # True Optional[T]: recurse with the single inner type
             val = _type_hint_to_validator(non_none_args[0])
         else:
-            # Union[T1, T2, ...] without None: passthrough (no strict type check)
-            val = Validator()
+            # Non-optional Union[T1, T2, ...] is not supported: fail fast instead of silently
+            # disabling type checking.
+            raise TypeError(
+                f"Non-optional typing.Union types are not supported as schema annotations: {hint!r}. "
+                "Use Optional[T] (Union[T, None]) or a plain type instead."
+            )
 
     # --- list[T] / List[T] ---
     elif origin is list:
