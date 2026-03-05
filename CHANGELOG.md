@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **`schema_overrides` パラメータ** (新規)
 
-特定のフィールドのバリデータを手動で上書きできます。値は `Validator` インスタンスのみ受け付けるため、出力スキーマは常に検証・保管に使える形になります。
+特定のフィールドのバリデータを手動で上書きできます。値は `Validator` インスタンスのみ受け付けるため、出力スキーマは常に検証・保管に使える形になります。**トップレベルの dict のキーにのみ適用され、ネストした dict やリスト内の要素には適用されません。**
 
 ```python
 schema = v.auto_infer(

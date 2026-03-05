@@ -284,7 +284,8 @@ class VBuilder:
                 インスタンスを指定します。``data`` が dict の場合のみ有効です。
                 指定されたフィールドは型推論をスキップし、指定のバリデータをそのまま
                 使用します。``.optional()`` をチェーンすることでフィールドを任意にも
-                できます。
+                できます。ネストした dict やリスト内の要素には適用されません
+                (トップレベルの dict のキーのみ対象)。
 
         Returns:
             データ構造に対応する ValidKit スキーマ。
@@ -370,7 +371,7 @@ class VBuilder:
             return StringValidator()
         if isinstance(data, list):
             item_schema: Union[Validator, Dict[str, Any]] = (
-                VBuilder.auto_infer(data[0], type_map, schema_overrides) if data else StringValidator()
+                VBuilder.auto_infer(data[0], type_map) if data else StringValidator()
             )
             return ListValidator(item_schema)
         if isinstance(data, dict):
@@ -379,7 +380,7 @@ class VBuilder:
                 if schema_overrides and key in schema_overrides:
                     result_schema[key] = schema_overrides[key]
                 else:
-                    result_schema[key] = VBuilder.auto_infer(value, type_map, schema_overrides)
+                    result_schema[key] = VBuilder.auto_infer(value, type_map)
             return result_schema
         raise TypeError(
             f"auto_infer: unsupported type '{type(data).__name__}'. "

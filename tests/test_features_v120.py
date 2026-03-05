@@ -572,3 +572,31 @@ class TestAutoInfer:
         assert result["name"] == "Alice"
         assert result["score"] == 8.5
         assert result["bio"] == "developer"
+
+    def test_schema_overrides_does_not_leak_into_nested_dict(self):
+        """schema_overrides はトップレベルの dict にのみ適用され、ネストした dict には適用されない"""
+        from validkit.v import StringValidator, NumberValidator
+        data = {"name": "Alice", "user": {"name": "Bob", "age": 25}}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("top-level override")},
+        )
+        # Top-level override is applied
+        assert schema["name"]._description == "top-level override"
+        # Nested dict is NOT affected by the override
+        assert isinstance(schema["user"]["name"], StringValidator)
+        assert schema["user"]["name"]._description is None
+
+    def test_schema_overrides_does_not_leak_into_list_items(self):
+        """schema_overrides はリスト内の dict 要素には適用されない"""
+        from validkit.v import StringValidator, ListValidator
+        data = {"items": [{"name": "foo", "val": 1}]}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("top-level override")},
+        )
+        assert isinstance(schema["items"], ListValidator)
+        item_validator = schema["items"]._item_validator
+        assert isinstance(item_validator["name"], StringValidator)
+        # List item's name field should NOT carry the top-level override
+        assert item_validator["name"]._description is None
