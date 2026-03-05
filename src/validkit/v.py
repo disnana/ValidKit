@@ -257,7 +257,7 @@ class VBuilder:
     def auto_infer(
         data: Any,
         type_map: Optional[Dict[type, Any]] = None,
-        schema_overrides: Optional[Dict[str, Any]] = None,
+        schema_overrides: Optional[Dict[builtins.str, Any]] = None,
     ) -> Any:
         """
         渡されたデータから ValidKit スキーマを逆生成します。
