@@ -2,6 +2,8 @@
 tests/test_class_schema.py
 クラス記法によるスキーマ定義のテスト:
   - 型アノテーション (str / int / float / bool) からのスキーマ生成
+  - typing モジュールのアノテーション (Optional / List / Dict / Union)
+  - Python 3.9+ 組み込みジェネリクス (list[T] / dict[K, V])
   - カスタム型 (original class) の isinstance バリデーション
   - クラス属性をデフォルト値として使用
   - Validator インスタンスをクラス属性として使用
@@ -11,6 +13,8 @@ tests/test_class_schema.py
 """
 
 import datetime
+import typing
+from typing import Dict, List, Optional
 import sys
 import os
 import pytest
@@ -240,6 +244,193 @@ class TestClassSchemaValidatorAttributes:
 
         result = validate({"name": "Bob", "age": 20}, Profile)
         assert result == {"name": "Bob", "age": 20}
+
+
+# ---------------------------------------------------------------------------
+# typing モジュールのアノテーション (Optional / List / Dict / Union)
+# ---------------------------------------------------------------------------
+
+class TestClassSchemaTypingAnnotations:
+    def test_optional_field_can_be_omitted(self):
+        """Optional[T] アノテーションのフィールドは省略可能"""
+        class Profile:
+            name: str
+            nickname: Optional[str]
+
+        result = validate({"name": "Alice"}, Profile)
+        assert result["name"] == "Alice"
+        assert "nickname" not in result
+
+    def test_optional_field_accepts_value(self):
+        """Optional[T] アノテーションのフィールドは値が渡されれば検証を通る"""
+        class Profile:
+            name: str
+            nickname: Optional[str]
+
+        result = validate({"name": "Alice", "nickname": "Ally"}, Profile)
+        assert result["nickname"] == "Ally"
+
+    def test_optional_field_rejects_wrong_type(self):
+        """Optional[T] で型が違う値を渡すとエラーになる"""
+        class Profile:
+            name: str
+            age: Optional[int]
+
+        with pytest.raises(ValidationError):
+            validate({"name": "Alice", "age": "thirty"}, Profile)
+
+    def test_optional_with_default(self):
+        """Optional[T] + クラス属性のデフォルト値が正しく機能する"""
+        class Config:
+            host: str
+            timeout: Optional[int] = 30
+
+        result = validate({"host": "example.com"}, Config)
+        assert result["timeout"] == 30
+
+    def test_list_annotation(self):
+        """List[T] アノテーションで list の各要素が検証される"""
+        class Report:
+            scores: List[int]
+
+        result = validate({"scores": [10, 20, 30]}, Report)
+        assert result["scores"] == [10, 20, 30]
+
+    def test_list_annotation_rejects_wrong_element_type(self):
+        """List[int] に文字列要素が含まれるとエラーになる"""
+        class Report:
+            scores: List[int]
+
+        with pytest.raises(ValidationError):
+            validate({"scores": [10, "bad", 30]}, Report)
+
+    def test_dict_annotation(self):
+        """Dict[K, V] アノテーションで辞書の各値が検証される"""
+        class Metrics:
+            values: Dict[str, int]
+
+        result = validate({"values": {"a": 1, "b": 2}}, Metrics)
+        assert result["values"] == {"a": 1, "b": 2}
+
+    def test_dict_annotation_rejects_wrong_value_type(self):
+        """Dict[str, int] に文字列値が含まれるとエラーになる"""
+        class Metrics:
+            values: Dict[str, int]
+
+        with pytest.raises(ValidationError):
+            validate({"values": {"a": "one"}}, Metrics)
+
+    def test_optional_custom_type(self):
+        """Optional[CustomType] でカスタム型がオプショナルになる"""
+        class Config:
+            name: str
+            timezone: Optional[Timezone]
+
+        result = validate({"name": "srv"}, Config)
+        assert "timezone" not in result
+
+        result2 = validate({"name": "srv", "timezone": UTC}, Config)
+        assert result2["timezone"] is UTC
+
+    def test_list_of_custom_type(self):
+        """List[CustomType] でカスタム型のリストを検証できる"""
+        class Config:
+            zones: List[Timezone]
+
+        result = validate({"zones": [UTC, JST]}, Config)
+        assert result["zones"] == [UTC, JST]
+
+    def test_list_of_custom_type_rejects_wrong(self):
+        """List[Timezone] に str が含まれるとエラーになる"""
+        class Config:
+            zones: List[Timezone]
+
+        with pytest.raises(ValidationError):
+            validate({"zones": [UTC, "NOT_A_TZ"]}, Config)
+
+    def test_complex_class_with_all_types(self):
+        """str / int / Optional / List / Dict / CustomType が混在するクラス"""
+        class ServerConfig:
+            host: str
+            port: int
+            ssl: bool
+            tags: Optional[List[str]]
+            metadata: Dict[str, int]
+            timezone: Timezone
+
+        data = {
+            "host": "example.com",
+            "port": 443,
+            "ssl": True,
+            "tags": ["web", "prod"],
+            "metadata": {"requests": 1000},
+            "timezone": UTC,
+        }
+        result = validate(data, ServerConfig)
+        assert result["host"] == "example.com"
+        assert result["port"] == 443
+        assert result["ssl"] is True
+        assert result["tags"] == ["web", "prod"]
+        assert result["metadata"] == {"requests": 1000}
+        assert result["timezone"] is UTC
+
+    def test_complex_class_optional_list_omitted(self):
+        """Optional[List[str]] フィールドを省略しても通る"""
+        class ServerConfig:
+            host: str
+            port: int
+            ssl: bool
+            tags: Optional[List[str]]
+            metadata: Dict[str, int]
+            timezone: Timezone
+
+        data = {
+            "host": "example.com",
+            "port": 80,
+            "ssl": False,
+            "metadata": {},
+            "timezone": JST,
+        }
+        result = validate(data, ServerConfig)
+        assert "tags" not in result
+
+
+# ---------------------------------------------------------------------------
+# Python 3.9+ 組み込みジェネリクス (list[T] / dict[K, V])
+# ---------------------------------------------------------------------------
+
+class TestClassSchemaBuiltinGenerics:
+    def test_builtin_list_annotation(self):
+        """Python 3.9+ の list[T] アノテーションが機能する"""
+        class Report:
+            scores: list[int]
+
+        result = validate({"scores": [1, 2, 3]}, Report)
+        assert result["scores"] == [1, 2, 3]
+
+    def test_builtin_list_rejects_wrong_element(self):
+        """list[int] に文字列要素が含まれるとエラーになる"""
+        class Report:
+            scores: list[int]
+
+        with pytest.raises(ValidationError):
+            validate({"scores": [1, "bad"]}, Report)
+
+    def test_builtin_dict_annotation(self):
+        """Python 3.9+ の dict[K, V] アノテーションが機能する"""
+        class Metrics:
+            values: dict[str, float]
+
+        result = validate({"values": {"rate": 0.95}}, Metrics)
+        assert result["values"]["rate"] == 0.95
+
+    def test_builtin_dict_rejects_wrong_value(self):
+        """dict[str, int] に整数でない値が含まれるとエラーになる"""
+        class Metrics:
+            values: dict[str, int]
+
+        with pytest.raises(ValidationError):
+            validate({"values": {"a": "bad"}}, Metrics)
 
 
 # ---------------------------------------------------------------------------
