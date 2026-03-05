@@ -353,9 +353,11 @@ class VBuilder:
                         result = handler(data)
                         # If the callable returned a Validator, use it directly.
                         # Otherwise treat the result as a converted primitive and re-infer.
+                        # Do not propagate schema_overrides: the converted value is not the
+                        # original dict, so top-level overrides must not bleed into it.
                         if isinstance(result, Validator):
                             return result
-                        return VBuilder.auto_infer(result, type_map, schema_overrides)
+                        return VBuilder.auto_infer(result, type_map, schema_overrides=None)
                     return handler
         # None: type cannot be inferred, mark as optional with no type constraint
         if data is None:

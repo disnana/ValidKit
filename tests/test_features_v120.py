@@ -600,3 +600,27 @@ class TestAutoInfer:
         assert isinstance(item_validator["name"], StringValidator)
         # List item's name field should NOT carry the top-level override
         assert item_validator["name"]._description is None
+
+    def test_type_map_callable_returning_dict_does_not_apply_schema_overrides(self):
+        """type_map の callable が dict を返して再推論するとき、schema_overrides は適用されない"""
+        from validkit.v import StringValidator, NumberValidator
+
+        class SpecialDate:
+            def __init__(self, y, m, d):
+                self.y, self.m, self.d = y, m, d
+
+        # Top-level value is the custom type; callable returns a dict.
+        # schema_overrides has "year" which MUST NOT bleed into the re-inferred dict.
+        schema = v.auto_infer(
+            SpecialDate(2024, 1, 15),
+            type_map={
+                SpecialDate: lambda val: {"year": val.y, "month": val.m, "day": val.d},
+            },
+            schema_overrides={"year": v.str().description("should-not-apply")},
+        )
+        assert isinstance(schema, dict), "converted dict should produce a nested dict schema"
+        # "year" must be inferred from the int value, NOT overridden by schema_overrides
+        assert isinstance(schema["year"], NumberValidator), (
+            "year inside the converted dict must be NumberValidator, not the schema_overrides value"
+        )
+        assert schema["year"]._description is None
