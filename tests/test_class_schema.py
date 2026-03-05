@@ -13,7 +13,6 @@ tests/test_class_schema.py
 """
 
 import datetime
-import typing
 from typing import Dict, List, Optional
 import sys
 import os
@@ -21,7 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from validkit import v, validate, ValidationError, Schema, ValidationResult, InstanceValidator
+from validkit import v, validate, ValidationError, Schema, ValidationResult
 
 
 # ---------------------------------------------------------------------------
@@ -548,3 +547,323 @@ class TestClassSchemaGenerateSample:
         schema = Schema({"tz": v.instance(Timezone).default(UTC)})
         sample = schema.generate_sample()
         assert sample["tz"] is UTC
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: InstanceValidator.coerce() 実装の検証
+# ---------------------------------------------------------------------------
+
+class TestInstanceValidatorCoerce:
+    """v.instance(T).coerce() が型変換を試みることを検証するテスト群。"""
+
+    def test_coerce_successful_construction(self):
+        """coerce=True のとき type_cls(value) が成功すれば変換後の値が返る"""
+        class Celsius:
+            def __init__(self, value: float) -> None:
+                self.value = float(value)
+            def __repr__(self) -> str:
+                return f"Celsius({self.value})"
+
+        schema = {"temp": v.instance(Celsius).coerce()}
+        # Pass a raw float → Celsius(float) should succeed
+        result = validate({"temp": 36.6}, schema)
+        assert isinstance(result["temp"], Celsius)
+        assert result["temp"].value == 36.6
+
+    def test_coerce_from_string(self):
+        """coerce=True のとき str から型変換できる場合は成功する"""
+        class Celsius:
+            def __init__(self, value: float) -> None:
+                self.value = float(value)
+
+        schema = {"temp": v.instance(Celsius).coerce()}
+        result = validate({"temp": "37.0"}, schema)
+        assert isinstance(result["temp"], Celsius)
+        assert result["temp"].value == 37.0
+
+    def test_coerce_raises_when_construction_fails(self):
+        """coerce=True でも type_cls(value) が例外を投げたらバリデーションエラー"""
+        class StrictType:
+            def __init__(self, value: object) -> None:
+                if not isinstance(value, int):
+                    raise ValueError("must be int")
+
+        schema = {"x": v.instance(StrictType).coerce()}
+        with pytest.raises(ValidationError) as exc_info:
+            validate({"x": "not an int"}, schema)
+        assert "Expected instance of StrictType" in exc_info.value.message
+
+    def test_no_coerce_raises_on_wrong_type(self):
+        """coerce=False (デフォルト) では型違いで即エラー"""
+        schema = {"tz": v.instance(Timezone)}
+        with pytest.raises(ValidationError) as exc_info:
+            validate({"tz": "UTC"}, schema)
+        assert "Expected instance of Timezone" in exc_info.value.message
+
+    def test_coerce_already_correct_type_is_passthrough(self):
+        """coerce=True でもすでに正しい型ならそのまま通る"""
+        schema = {"tz": v.instance(Timezone).coerce()}
+        result = validate({"tz": UTC}, schema)
+        assert result["tz"] is UTC
+
+    def test_coerce_with_stdlib_int(self):
+        """coerce=True で int型に対して文字列数値が変換される (標準ライブラリ型)"""
+        # Note: v.instance(int).coerce() does int("42") which succeeds
+        schema = {"count": v.instance(int).coerce()}
+        result = validate({"count": "42"}, schema)
+        assert result["count"] == 42
+        assert isinstance(result["count"], int)
+
+    def test_coerce_with_optional_and_default(self):
+        """coerce と optional / default の組み合わせが正しく動作する"""
+        class Port:
+            def __init__(self, n: int) -> None:
+                self.n = int(n)
+
+        schema = {"port": v.instance(Port).coerce().default(Port(80))}
+        # value provided as raw int → coerced to Port
+        r1 = validate({"port": 443}, schema)
+        assert isinstance(r1["port"], Port)
+        assert r1["port"].n == 443
+        # value absent → default (already a Port) is returned
+        r2 = validate({}, schema)
+        assert isinstance(r2["port"], Port)
+        assert r2["port"].n == 80
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: _type_hint_to_validator が公開 API を使うことを検証するテスト群
+# ---------------------------------------------------------------------------
+
+class TestTypeHintToValidatorPublicAPI:
+    """_type_hint_to_validator() が .optional() / .default() 公開メソッドを通じて
+    validator の状態を設定することを、クラス記法経由で end-to-end に検証する。"""
+
+    def test_optional_annotation_sets_optional_via_public_api(self):
+        """Optional[T] アノテーションのフィールドは省略可能 (response に含まれない)"""
+        class Config:
+            host: str
+            nickname: Optional[str]
+
+        # nickname は省略しても Missing required key が出ない
+        result = validate({"host": "db"}, Config)
+        assert result["host"] == "db"
+        assert "nickname" not in result
+
+    def test_optional_annotation_passes_value_through(self):
+        """Optional[T] で値を渡したときは検証してから応答に含まれる"""
+        class Config:
+            host: str
+            nickname: Optional[str]
+
+        result = validate({"host": "db", "nickname": "alias"}, Config)
+        assert result["nickname"] == "alias"
+
+    def test_optional_annotation_rejects_wrong_type(self):
+        """Optional[int] に str を渡すとバリデーションエラー"""
+        class Config:
+            count: Optional[int]
+
+        with pytest.raises(ValidationError):
+            validate({"count": "bad"}, Config)
+
+    def test_default_annotation_sets_default_via_public_api(self):
+        """クラス属性デフォルト値がフィールド欠損時に応答に補完される"""
+        class Config:
+            host: str = "localhost"
+            port: int = 5432
+
+        result = validate({}, Config)
+        assert result["host"] == "localhost"
+        assert result["port"] == 5432
+
+    def test_default_annotation_explicit_value_overrides_default(self):
+        """入力値があればデフォルトより入力値が優先される"""
+        class Config:
+            port: int = 5432
+
+        result = validate({"port": 9000}, Config)
+        assert result["port"] == 9000
+
+    def test_optional_with_default_annotation(self):
+        """Optional[T] + クラス属性デフォルトの組み合わせ: 省略時はデフォルト、指定時は値"""
+        class Config:
+            timeout: Optional[int] = 30
+
+        r_default = validate({}, Config)
+        assert r_default["timeout"] == 30
+
+        r_override = validate({"timeout": 60}, Config)
+        assert r_override["timeout"] == 60
+
+    def test_list_annotation_response_contains_all_elements(self):
+        """List[T] アノテーションで応答がリスト全体を正確に含む"""
+        class Report:
+            scores: List[int]
+
+        result = validate({"scores": [10, 20, 30]}, Report)
+        assert result["scores"] == [10, 20, 30]
+
+    def test_dict_annotation_response_contains_all_entries(self):
+        """Dict[K, V] アノテーションで応答が辞書全体を正確に含む"""
+        class Metrics:
+            values: Dict[str, int]
+
+        result = validate({"values": {"a": 1, "b": 2}}, Metrics)
+        assert result["values"] == {"a": 1, "b": 2}
+
+
+# ---------------------------------------------------------------------------
+# 網羅的な end-to-end レスポンス検証テスト群
+# ---------------------------------------------------------------------------
+
+class TestEndToEndClassSchemaResponse:
+    """クラス記法スキーマ全体の応答値を網羅的に検証するテスト群。
+    各フィールドの応答値が正確であることをアサートする。"""
+
+    def test_full_response_with_all_basic_types(self):
+        """str / int / float / bool の全フィールドが応答に正確に含まれる"""
+        class Profile:
+            name: str
+            age: int
+            score: float
+            active: bool
+
+        data = {"name": "Alice", "age": 30, "score": 9.85, "active": True}
+        result = validate(data, Profile)
+        assert result == {"name": "Alice", "age": 30, "score": 9.85, "active": True}
+
+    def test_full_response_with_defaults_and_overrides(self):
+        """デフォルト値と入力値が混在するときの応答全体を検証"""
+        class Config:
+            host: str
+            port: int = 5432
+            ssl: bool = False
+            timeout: Optional[int] = 30
+
+        result = validate({"host": "prod.example.com", "port": 443}, Config)
+        assert result == {
+            "host": "prod.example.com",
+            "port": 443,
+            "ssl": False,
+            "timeout": 30,
+        }
+
+    def test_full_response_with_nested_list_and_dict(self):
+        """List と Dict が混在するスキーマの応答全体を検証"""
+        class Analytics:
+            hits: List[int]
+            labels: Dict[str, str]
+
+        result = validate(
+            {"hits": [100, 200, 300], "labels": {"env": "prod", "region": "us"}},
+            Analytics,
+        )
+        assert result == {
+            "hits": [100, 200, 300],
+            "labels": {"env": "prod", "region": "us"},
+        }
+
+    def test_full_response_with_custom_type(self):
+        """カスタム型フィールドがある応答全体を検証"""
+        class Deployment:
+            name: str
+            timezone: Timezone
+
+        result = validate({"name": "deploy-1", "timezone": UTC}, Deployment)
+        assert result["name"] == "deploy-1"
+        assert result["timezone"] is UTC
+
+    def test_full_response_optional_fields_absent_when_not_provided(self):
+        """省略可能フィールドは未指定時に応答に含まれない"""
+        class UserProfile:
+            username: str
+            bio: Optional[str]
+            website: Optional[str]
+
+        result = validate({"username": "nana_kit"}, UserProfile)
+        assert set(result.keys()) == {"username"}
+        assert result["username"] == "nana_kit"
+
+    def test_full_response_validator_attributes_respected(self):
+        """Validator インスタンスをクラス属性として使ったときの応答全体を検証"""
+        class Profile:
+            role = v.str().default("guest")
+            score = v.int().range(0, 100).default(0)
+
+        r_defaults = validate({}, Profile)
+        assert r_defaults == {"role": "guest", "score": 0}
+
+        r_provided = validate({"role": "admin", "score": 99}, Profile)
+        assert r_provided == {"role": "admin", "score": 99}
+
+    def test_full_response_coerce_in_instance_validator(self):
+        """coerce=True の InstanceValidator でのレスポンス全体を検証"""
+        class Celsius:
+            def __init__(self, val: float) -> None:
+                self.val = float(val)
+
+        class Reading:
+            sensor: str
+            temp = v.instance(Celsius).coerce()
+
+        result = validate({"sensor": "S1", "temp": 36.6}, Reading)
+        assert result["sensor"] == "S1"
+        assert isinstance(result["temp"], Celsius)
+        assert result["temp"].val == 36.6
+
+    def test_full_response_collect_errors_returns_all_failures(self):
+        """collect_errors=True のとき全エラーが ValidationResult.errors に収集される"""
+        class Form:
+            name: str
+            age: int
+            score: float
+
+        result = validate(
+            {"name": 42, "age": "thirty", "score": "high"},
+            Form,
+            collect_errors=True,
+        )
+        assert isinstance(result, ValidationResult)
+        assert len(result.errors) >= 3
+
+    def test_full_response_partial_validation_omits_unset_keys(self):
+        """partial=True のとき不足フィールドはエラーにならず、送ったフィールドだけ応答に含まれる"""
+        class Config:
+            host: str
+            port: int
+            ssl: bool
+
+        result = validate({"port": 8080}, Config, partial=True)
+        assert result.get("port") == 8080
+        assert "host" not in result
+
+    def test_full_response_base_merge_fills_missing_fields(self):
+        """base= のとき欠損フィールドがベース値でマージされる"""
+        class Config:
+            host: str
+            port: int
+
+        base = {"host": "old.host", "port": 5432}
+        result = validate({"host": "new.host"}, Config, base=base, partial=True)
+        assert result["host"] == "new.host"
+        assert result["port"] == 5432
+
+    def test_full_response_generate_sample_uses_defaults(self):
+        """generate_sample() がデフォルト値をサンプルとして返す"""
+        from validkit.validator import _class_to_schema
+
+        class Config:
+            host: str = "localhost"
+            port: int = 5432
+            ssl: bool = False
+            timeout: Optional[int] = 30
+
+        schema = Schema(_class_to_schema(Config))
+        sample = schema.generate_sample()
+        assert sample == {
+            "host": "localhost",
+            "port": 5432,
+            "ssl": False,
+            "timeout": 30,
+        }

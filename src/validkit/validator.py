@@ -212,12 +212,12 @@ def _type_hint_to_validator(
     else:
         val = Validator()
 
-    if optional_flag:
-        val._optional = True
     if has_default:
-        val._has_default = True
-        val._default_value = default_val
-        val._optional = True
+        # Apply default value via public API; defaulted fields are effectively optional.
+        val = val.default(default_val)
+    elif optional_flag:
+        # Mark field as optional via public API.
+        val = val.optional()
 
     return val
 
