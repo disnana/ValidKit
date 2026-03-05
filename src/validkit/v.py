@@ -267,12 +267,16 @@ class VBuilder:
         Returns:
             データ構造に対応する ValidKit スキーマ。
 
+            - ``None``  → :class:`Validator` に ``.optional()`` を付けたもの (型不明のため optional 扱い)
             - ``dict``  → 各キーに対応するバリデータを含む dict スキーマ
             - ``list``  → :class:`ListValidator` (要素が存在する場合は最初の要素から推論)
             - ``bool``  → :class:`BoolValidator`  (int より先に評価)
             - ``int``   → :class:`NumberValidator` (int)
             - ``float`` → :class:`NumberValidator` (float)
             - ``str``   → :class:`StringValidator`
+
+        Raises:
+            TypeError: サポートされていない型 (datetime, カスタムクラスなど) が渡された場合。
 
         Example::
 
@@ -283,7 +287,15 @@ class VBuilder:
             nested = {"user": {"id": 1, "tags": ["admin"]}}
             schema = v.auto_infer(nested)
             # -> {"user": {"id": v.int(), "tags": v.list(v.str())}}
+
+            # None フィールドは optional なバリデータになる
+            data = {"name": "Alice", "nickname": None}
+            schema = v.auto_infer(data)
+            # -> {"name": v.str(), "nickname": Validator().optional()}
         """
+        # None: type cannot be inferred, mark as optional with no type constraint
+        if data is None:
+            return Validator().optional()
         # bool must be checked before int because bool is a subclass of int
         if isinstance(data, bool):
             return BoolValidator()
@@ -300,6 +312,9 @@ class VBuilder:
             return ListValidator(item_schema)
         if isinstance(data, dict):
             return {key: VBuilder.auto_infer(value) for key, value in data.items()}
-        return Validator()
+        raise TypeError(
+            f"auto_infer: unsupported type '{type(data).__name__}'. "
+            "Supported types are: None, bool, int, float, str, list, dict."
+        )
 
 v = VBuilder()

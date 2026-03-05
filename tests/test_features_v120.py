@@ -322,3 +322,39 @@ class TestAutoInfer:
         result = validate(data, schema)
         assert result["user"]["id"] == 1
         assert result["user"]["tags"] == ["admin", "editor"]
+
+    def test_none_returns_optional_validator(self):
+        """None 値から optional な基底 Validator が生成される"""
+        from validkit.v import Validator
+        schema = v.auto_infer(None)
+        assert isinstance(schema, Validator)
+        assert schema._optional is True
+
+    def test_dict_with_none_field_is_optional(self):
+        """dict 内の None フィールドは optional なバリデータになる"""
+        from validkit.v import Validator
+        data = {"name": "Alice", "nickname": None}
+        schema = v.auto_infer(data)
+        assert isinstance(schema["nickname"], Validator)
+        assert schema["nickname"]._optional is True
+
+    def test_dict_with_none_field_validates_with_none(self):
+        """auto_infer した None フィールドは None 値でバリデーションが通る"""
+        data = {"name": "Alice", "nickname": None}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result.get("nickname") is None
+
+    def test_unsupported_type_raises_type_error(self):
+        """サポートされていない型 (カスタムクラスなど) は TypeError を送出する"""
+        import datetime
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(datetime.datetime.now())
+
+    def test_dict_with_unsupported_type_raises_type_error(self):
+        """dict 内にサポートされていない型が含まれると TypeError を送出する"""
+        import datetime
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(data)
