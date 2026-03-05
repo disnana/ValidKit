@@ -257,6 +257,7 @@ class VBuilder:
     def auto_infer(
         data: Any,
         type_map: Optional[Dict[type, Any]] = None,
+        schema_overrides: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         渡されたデータから ValidKit スキーマを逆生成します。
@@ -267,14 +268,28 @@ class VBuilder:
         Args:
             data: スキーマを推論する元データ。
             type_map: カスタム型とバリデータのマッピング (省略可能)。
-                キーに Python の型、値に :class:`Validator` インスタンス
-                **または** ``(value) -> Validator`` 形式の呼び出し可能オブジェクトを
-                指定します。組み込み型より先に評価されるため、組み込み型の挙動を
-                上書きすることもできます。
+                キーに Python の型、値に以下のいずれかを指定します。組み込み型より先に
+                評価されるため、組み込み型の挙動を上書きすることもできます。
+
+                - :class:`Validator` インスタンス: そのまま使用します。
+                - ``(value) -> Validator`` 形式の呼び出し可能オブジェクト:
+                  値を受け取り :class:`Validator` を返す関数。
+                - ``(value) -> primitive`` 形式の呼び出し可能オブジェクト:
+                  値をプリミティブ値 (``str``, ``int``, ``float``, ``bool``, ``list``,
+                  ``dict``, ``None``) に変換する関数。変換後の値で ``auto_infer`` を
+                  再帰呼び出しします (オプション自動変換)。
+
+            schema_overrides: フィールドごとに推論を手動で上書きするマッピング
+                (省略可能)。キーにフィールド名 (文字列)、値に :class:`Validator`
+                インスタンスを指定します。``data`` が dict の場合のみ有効です。
+                指定されたフィールドは型推論をスキップし、指定のバリデータをそのまま
+                使用します。``.optional()`` をチェーンすることでフィールドを任意にも
+                できます。
 
         Returns:
             データ構造に対応する ValidKit スキーマ。
 
+            - ``schema_overrides`` に一致するキー → 対応するバリデータ (推論をスキップ)
             - ``type_map`` に一致する型 → 対応するバリデータ (または呼び出し結果)
             - ``None``  → :class:`Validator` に ``.optional()`` を付けたもの (型不明のため optional 扱い)
             - ``dict``  → 各キーに対応するバリデータを含む dict スキーマ
@@ -302,7 +317,7 @@ class VBuilder:
             schema = v.auto_infer(data)
             # -> {"name": v.str(), "nickname": Validator().optional()}
 
-            # カスタム型は type_map で対応できる
+            # カスタム型は type_map で対応できる (バリデータインスタンス)
             import datetime
             schema = v.auto_infer(
                 {"ts": datetime.datetime(2024, 1, 1)},
@@ -310,19 +325,36 @@ class VBuilder:
             )
             # -> {"ts": StringValidator}
 
-            # 呼び出し可能オブジェクトも受け付ける (値を受け取って Validator を返す)
+            # type_map の callable がプリミティブを返す場合は再帰推論 (オプション自動変換)
             schema = v.auto_infer(
                 {"ts": datetime.datetime(2024, 1, 1)},
-                type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+                type_map={datetime.datetime: lambda val: val.isoformat()},
             )
+            # isoformat() -> str -> auto_infer("2024-01-01T00:00:00") -> StringValidator
+
+            # schema_overrides でフィールドを手動補完 (optional 指定も可能)
+            schema = v.auto_infer(
+                {"name": "Alice", "score": 9.5, "note": ""},
+                schema_overrides={
+                    "score": v.float().range(0.0, 10.0),
+                    "note": v.str().optional(),
+                },
+            )
+            # -> {"name": StringValidator, "score": NumberValidator(float, 0..10),
+            #     "note": StringValidator(optional)}
         """
+        # schema_overrides only applies at the dict level; handled inside dict branch below
         # User-supplied type_map is checked first so custom types (and overrides) are handled
         if type_map:
             for custom_type, handler in type_map.items():
                 if isinstance(data, custom_type):
-                    # callable but not a Validator instance → call with the value
                     if callable(handler) and not isinstance(handler, Validator):
-                        return handler(data)
+                        result = handler(data)
+                        # If the callable returned a Validator, use it directly.
+                        # Otherwise treat the result as a converted primitive and re-infer.
+                        if isinstance(result, Validator):
+                            return result
+                        return VBuilder.auto_infer(result, type_map, schema_overrides)
                     return handler
         # None: type cannot be inferred, mark as optional with no type constraint
         if data is None:
@@ -338,11 +370,17 @@ class VBuilder:
             return StringValidator()
         if isinstance(data, list):
             item_schema: Union[Validator, Dict[str, Any]] = (
-                VBuilder.auto_infer(data[0], type_map) if data else StringValidator()
+                VBuilder.auto_infer(data[0], type_map, schema_overrides) if data else StringValidator()
             )
             return ListValidator(item_schema)
         if isinstance(data, dict):
-            return {key: VBuilder.auto_infer(value, type_map) for key, value in data.items()}
+            result_schema: Dict[str, Any] = {}
+            for key, value in data.items():
+                if schema_overrides and key in schema_overrides:
+                    result_schema[key] = schema_overrides[key]
+                else:
+                    result_schema[key] = VBuilder.auto_infer(value, type_map, schema_overrides)
+            return result_schema
         raise TypeError(
             f"auto_infer: unsupported type '{type(data).__name__}'. "
             "Pass a type_map to handle custom types, or use one of the built-in "

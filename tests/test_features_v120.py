@@ -422,3 +422,153 @@ class TestAutoInfer:
                 Unrelated(),
                 type_map={datetime.date: v.str()},  # Unrelated は含まれない
             )
+
+    # ---- type_map 自動変換 (callable がプリミティブを返す) ---
+
+    def test_type_map_callable_returning_str_re_infers(self):
+        """type_map の callable が str を返す場合 → StringValidator として再推論される"""
+        import datetime
+        from validkit.v import StringValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 1, 1),
+            type_map={datetime.date: lambda val: val.isoformat()},
+        )
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_callable_returning_int_re_infers(self):
+        """type_map の callable が int を返す場合 → NumberValidator(int) として再推論される"""
+        import datetime
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 1, 1),
+            type_map={datetime.date: lambda val: val.toordinal()},
+        )
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is int
+
+    def test_type_map_callable_returning_dict_re_infers(self):
+        """type_map の callable が dict を返す場合 → ネスト dict スキーマとして再推論される"""
+        import datetime
+        from validkit.v import StringValidator, NumberValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 6, 15),
+            type_map={
+                datetime.date: lambda val: {"year": val.year, "month": val.month, "day": val.day}
+            },
+        )
+        assert isinstance(schema, dict)
+        assert isinstance(schema["year"], NumberValidator)
+        assert isinstance(schema["month"], NumberValidator)
+        assert isinstance(schema["day"], NumberValidator)
+
+    def test_type_map_callable_returning_validator_used_directly(self):
+        """type_map の callable が Validator を返す場合はそのまま使用される (再推論なし)"""
+        import datetime
+        from validkit.v import StringValidator
+        dt = datetime.datetime(2024, 6, 15, 12, 0, 0)
+        schema = v.auto_infer(
+            dt,
+            type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+        )
+        assert isinstance(schema, StringValidator)
+        assert schema._description == str(dt)
+
+    def test_type_map_auto_convert_in_dict_field(self):
+        """dict フィールドの auto-convert callable も正しく re-infer される"""
+        import datetime
+        from validkit.v import StringValidator, NumberValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(
+            data,
+            type_map={datetime.date: lambda val: val.isoformat()},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    # ---- schema_overrides -----------------------------------------------
+
+    def test_schema_overrides_replaces_inferred_field(self):
+        """schema_overrides で指定したフィールドは推論をスキップして指定バリデータを使う"""
+        from validkit.v import NumberValidator
+        data = {"name": "Alice", "score": 9.5}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"score": v.float().range(0.0, 10.0)},
+        )
+        assert isinstance(schema["score"], NumberValidator)
+        assert schema["score"]._min == 0.0
+        assert schema["score"]._max == 10.0
+
+    def test_schema_overrides_optional_field(self):
+        """schema_overrides で .optional() を付けると optional フィールドになる"""
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "bio": "some text"}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"bio": v.str().optional()},
+        )
+        assert isinstance(schema["bio"], StringValidator)
+        assert schema["bio"]._optional is True
+
+    def test_schema_overrides_handles_unsupported_type_field(self):
+        """schema_overrides があれば推論できない型のフィールドもエラーにならない"""
+        import datetime
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"created_at": v.str()},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_schema_overrides_does_not_affect_non_dict_data(self):
+        """schema_overrides は dict 以外のデータに渡しても影響しない (str を推論する)"""
+        from validkit.v import StringValidator
+        schema = v.auto_infer("hello", schema_overrides={"hello": v.int()})
+        assert isinstance(schema, StringValidator)
+
+    def test_schema_overrides_unmentioned_fields_still_inferred(self):
+        """schema_overrides に含まれないフィールドは通常どおり推論される"""
+        from validkit.v import StringValidator, NumberValidator
+        data = {"name": "Alice", "age": 30}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("表示名")},
+        )
+        assert schema["name"]._description == "表示名"
+        assert isinstance(schema["age"], NumberValidator)
+
+    def test_schema_overrides_combined_with_type_map(self):
+        """schema_overrides と type_map を同時に使うと両方有効になる"""
+        import datetime
+        from validkit.v import StringValidator, NumberValidator
+        data = {
+            "name": "Alice",
+            "score": 9.5,
+            "created_at": datetime.date(2024, 1, 1),
+        }
+        schema = v.auto_infer(
+            data,
+            type_map={datetime.date: v.str()},
+            schema_overrides={"score": v.float().range(0.0, 10.0)},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["score"], NumberValidator)
+        assert schema["score"]._min == 0.0
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_schema_overrides_round_trip_validation(self):
+        """schema_overrides を含むスキーマで元データをバリデーションできる"""
+        data = {"name": "Alice", "score": 8.5, "bio": "developer"}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={
+                "score": v.float().range(0.0, 10.0),
+                "bio": v.str().optional(),
+            },
+        )
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result["score"] == 8.5
+        assert result["bio"] == "developer"

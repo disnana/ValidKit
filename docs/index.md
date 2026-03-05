@@ -41,6 +41,78 @@ sample = SCHEMA.generate_sample()
 
 優先順位: `.default()` > `.examples()[0]` > 各型のデフォルト値。
 
+### スキーマ自動生成
+
+#### `v.auto_infer(data, type_map=None, schema_overrides=None)`
+
+渡されたデータから ValidKit スキーマを **逆生成** します。既存のデータ構造からスキーマをブートストラップするのに便利です。
+
+**引数:**
+- `data` (Any): スキーマを推論する元データ。
+- `type_map` (dict, 省略可能): カスタム型 → バリデータのマッピング。
+  - 値に `Validator` インスタンスを渡すとそのまま使用します。
+  - 値に callable (値 → `Validator`) を渡すと、呼び出し結果を使用します。
+  - 値に callable (値 → プリミティブ) を渡すと、変換後の値で `auto_infer` を再帰呼び出しします（**オプション自動変換**）。
+- `schema_overrides` (dict, 省略可能): フィールド名 → バリデータの補完マッピング。`data` が `dict` の場合のみ有効。指定されたフィールドは型推論をスキップします。`.optional()` もチェーン可能です。
+
+**型推論のルール:**
+
+| 型 | 返すバリデータ |
+|---|---|
+| `None` | `Validator().optional()` (型不明のため optional 扱い) |
+| `bool` | `BoolValidator` (int より先に評価) |
+| `int` | `NumberValidator(int)` |
+| `float` | `NumberValidator(float)` |
+| `str` | `StringValidator` |
+| `list` | `ListValidator` (最初の要素から推論; 空は `StringValidator`) |
+| `dict` | ネストした dict スキーマ (再帰) |
+| その他 | `type_map` で処理; なければ `TypeError` |
+
+**使用例:**
+
+```python
+# 基本的な使い方
+data = {"name": "Alice", "age": 30, "active": True, "tags": ["admin"]}
+schema = v.auto_infer(data)
+result = validate(data, schema)  # 元データでそのまま検証できる
+
+# None フィールドは自動で optional になる
+data = {"name": "Alice", "nickname": None}
+schema = v.auto_infer(data)
+# -> {"name": StringValidator, "nickname": Validator().optional()}
+
+# type_map でカスタム型を処理 (バリデータインスタンス)
+import datetime
+schema = v.auto_infer(
+    {"created_at": datetime.date(2024, 1, 1)},
+    type_map={datetime.date: v.str()},
+)
+
+# type_map の callable がプリミティブを返す場合 → 変換後の値で再推論 (オプション自動変換)
+schema = v.auto_infer(
+    {"ts": datetime.datetime(2024, 6, 15, 12, 0)},
+    type_map={datetime.datetime: lambda val: val.isoformat()},  # str に変換 → StringValidator
+)
+
+# schema_overrides でフィールドを手動補完・optional 指定
+schema = v.auto_infer(
+    {"name": "Alice", "score": 9.5, "bio": "dev"},
+    schema_overrides={
+        "score": v.float().range(0.0, 10.0),
+        "bio": v.str().optional(),
+    },
+)
+
+# type_map と schema_overrides の併用
+schema = v.auto_infer(
+    {"name": "Alice", "score": 9.5, "created_at": datetime.date(2024, 1, 1)},
+    type_map={datetime.date: v.str()},
+    schema_overrides={"score": v.float().range(0.0, 10.0)},
+)
+```
+
+---
+
 ### 型バリデータ
 - `v.str()`: 文字列であることを検証。
 - `v.int()`: 整数であることを検証。
