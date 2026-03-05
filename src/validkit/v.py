@@ -250,10 +250,10 @@ class InstanceValidator(Validator):
             if self._coerce:
                 try:
                     coerced_value = self._instance_type(value)
-                except Exception:
+                except Exception as e:
                     raise TypeError(
                         f"Expected instance of {self._instance_type.__name__}, got {type(value).__name__}"
-                    )
+                    ) from e
                 if not isinstance(coerced_value, self._instance_type):
                     raise TypeError(
                         f"Expected instance of {self._instance_type.__name__}, got {type(coerced_value).__name__}"

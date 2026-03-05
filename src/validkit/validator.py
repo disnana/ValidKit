@@ -178,11 +178,12 @@ def _type_hint_to_validator(
             # True Optional[T]: recurse with the single inner type
             val = _type_hint_to_validator(non_none_args[0])
         else:
-            # Non-optional Union[T1, T2, ...] is not supported: fail fast instead of silently
-            # disabling type checking.
+            # Union with multiple non-None members is not supported: fail fast instead of silently
+            # disabling type checking. (This also covers Union[T1, T2, None] where None is present
+            # but there are still multiple non-None members and no single target type can be inferred.)
             raise TypeError(
-                f"Non-optional typing.Union types are not supported as schema annotations: {hint!r}. "
-                "Use Optional[T] (Union[T, None]) or a plain type instead."
+                f"typing.Union with multiple non-None members is not supported as schema annotations: {hint!r}. "
+                "Use Optional[T] (Union[T, None]) with a single non-None type, or a plain type instead."
             )
 
     # --- list[T] / List[T] ---
@@ -269,8 +270,8 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
         if isinstance(attr, Validator):
             schema[key] = attr
 
-    # 2. Process type annotations
-    annotations: Dict[str, Any] = getattr(cls, "__annotations__", {})
+    # 2. Process type annotations (only those declared directly on this class, not inherited)
+    annotations: Dict[str, Any] = cls.__dict__.get("__annotations__", {})
     for key, type_hint in annotations.items():
         if key in schema:
             # Already have a Validator class attribute for this field — skip

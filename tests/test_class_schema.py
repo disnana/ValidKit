@@ -87,7 +87,8 @@ class TestClassSchemaBasic:
         assert result == {"name": "Alice"}
 
     def test_empty_class_schema(self):
-        """アノテーションなしのクラスは空のスキーマとして扱われる"""
+        """アノテーションなしのクラスはスキーマとして認識されない。
+        validate() はデータをそのまま返す（パススルー）。"""
         class Empty:
             pass
 
@@ -887,7 +888,7 @@ class TestNonOptionalUnionRaisesError:
         class BadSchema:
             value: Union[int, str]
 
-        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+        with pytest.raises(TypeError, match="multiple non-None members"):
             _class_to_schema(BadSchema)
 
     def test_non_optional_union_raises_type_error_via_type_hint_to_validator(self):
@@ -895,7 +896,7 @@ class TestNonOptionalUnionRaisesError:
         from typing import Union
         from validkit.validator import _type_hint_to_validator
 
-        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+        with pytest.raises(TypeError, match="multiple non-None members"):
             _type_hint_to_validator(Union[int, str])
 
     def test_optional_t_does_not_raise(self):
@@ -911,7 +912,7 @@ class TestNonOptionalUnionRaisesError:
         from typing import Union
         from validkit.validator import _type_hint_to_validator
 
-        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+        with pytest.raises(TypeError, match="multiple non-None members"):
             _type_hint_to_validator(Union[int, str, float])
 
     def test_validate_with_class_with_non_optional_union_raises(self):
@@ -921,7 +922,7 @@ class TestNonOptionalUnionRaisesError:
         class Config:
             host: Union[str, bytes]
 
-        with pytest.raises(TypeError, match="Non-optional typing.Union"):
+        with pytest.raises(TypeError, match="multiple non-None members"):
             validate({"host": "db"}, Config)
 
 
@@ -1088,3 +1089,117 @@ class TestIsClassSchemaTooBroad:
         result = validate(data, datetime.datetime)
         # Must NOT silently strip all keys to {}
         assert result == data
+
+
+# ---------------------------------------------------------------------------
+# TDD Cycle 2: 新しいレビュー指摘への対応
+# ---------------------------------------------------------------------------
+
+class TestUnionWithNoneErrorMessage:
+    """Union 型のエラーメッセージが正確であることを検証するテスト群。
+    複数の非 None メンバーを持つ Union アノテーションは TypeError を送出し、
+    エラーメッセージは正確に問題を説明しなければならない。"""
+
+    def test_union_with_none_and_multiple_non_none_raises_with_accurate_message(self):
+        """Union[int, str, None] は非 None メンバーが複数あるため TypeError を送出する"""
+        from typing import Union
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="multiple non-None members"):
+            _type_hint_to_validator(Union[int, str, None])
+
+    def test_union_without_none_still_raises_type_error(self):
+        """Union[int, str] (None なし) は引き続き TypeError を送出する"""
+        from typing import Union
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="multiple non-None members"):
+            _type_hint_to_validator(Union[int, str])
+
+    def test_union_int_str_none_error_message_contains_type_repr(self):
+        """エラーメッセージはどの型アノテーションが問題かを repr で含む"""
+        from typing import Union
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError) as exc_info:
+            _type_hint_to_validator(Union[int, str, None])
+
+        # The hint repr (e.g. "typing.Union[int, str, NoneType]") must be in the message
+        assert "typing.Union" in str(exc_info.value), (
+            "Error message should include the exact hint repr so users know what failed"
+        )
+
+
+class TestInstanceValidatorExceptionChaining:
+    """InstanceValidator.coerce() が元の例外を正しくチェーンすることを検証。"""
+
+    def test_coercion_failure_chains_original_exception(self):
+        """coerce() が失敗したとき、送出される TypeError は元の例外を __cause__ に持つ"""
+        from validkit import v
+
+        class StrictType:
+            def __init__(self, value: str) -> None:
+                raise ValueError(f"Cannot construct from {value!r}")
+
+        validator = v.instance(StrictType).coerce()
+
+        with pytest.raises(TypeError) as exc_info:
+            validator.validate("bad_value")
+
+        assert exc_info.value.__cause__ is not None, (
+            "TypeError raised by coerce() should chain the original exception via 'raise ... from e'"
+        )
+        assert isinstance(exc_info.value.__cause__, ValueError), (
+            "The chained exception should be the original ValueError from the constructor"
+        )
+
+    def test_coercion_failure_chain_preserves_original_message(self):
+        """チェーンされた例外は元のコンストラクタのメッセージを保持する"""
+        from validkit import v
+
+        class StrictType:
+            def __init__(self, value: str) -> None:
+                raise ValueError("original error message")
+
+        validator = v.instance(StrictType).coerce()
+
+        with pytest.raises(TypeError) as exc_info:
+            validator.validate("bad_value")
+
+        assert "original error message" in str(exc_info.value.__cause__)
+
+
+class TestClassSchemaAnnotationInheritance:
+    """_class_to_schema() が継承されたアノテーションを含めず、
+    クラス自身の __dict__ からのみアノテーションを読み取ることを検証。"""
+
+    def test_class_to_schema_uses_own_annotations_only(self):
+        """_class_to_schema() は cls.__dict__ のアノテーションのみ処理する"""
+        from validkit.validator import _class_to_schema
+
+        class Base:
+            x: int
+
+        class ChildWithValidatorAttr(Base):
+            role = v.str()  # Validator attr → treated as schema
+
+        schema = _class_to_schema(ChildWithValidatorAttr)
+        # Only own fields should appear; 'x' is inherited from Base, not declared on Child
+        assert "role" in schema, "'role' (Validator attr) must be in schema"
+        assert "x" not in schema, "'x' (inherited from Base) must NOT be in schema"
+
+    def test_validate_with_child_schema_excludes_parent_annotations(self):
+        """validate() でも親クラスのアノテーションは引き継がれない"""
+        from validkit.validator import validate
+        from validkit import v
+
+        class Base:
+            x: int
+
+        class ChildSchema(Base):
+            role = v.str()  # Only this is owned
+
+        # 'role' is required; 'x' (from Base) should NOT be required
+        result = validate({"role": "admin"}, ChildSchema)
+        assert result == {"role": "admin"}
+        assert "x" not in result
