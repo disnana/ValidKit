@@ -926,24 +926,26 @@ class TestNonOptionalUnionRaisesError:
 
 
 # ---------------------------------------------------------------------------
-# Fix 6: 空クラスはクラス記法スキーマとして {} と同等に扱われる
+# 空クラスの動作（注: 空クラスはスキーマと認識されず、validate() でパススルーになる）
 # ---------------------------------------------------------------------------
 
 class TestEmptyClassSchema:
-    """空クラス (アノテーションも Validator 属性もない) をスキーマとして渡したとき、
-    空スキーマ {} と同等に動作することを検証するテスト群。"""
+    """空クラス (アノテーションも Validator 属性もない) は _is_class_schema() で False になり、
+    クラス記法スキーマとしては扱われないことを検証するテスト群。
+    空クラスを validate() に渡すと、スキーマ処理をバイパスしてデータをそのまま返す（パススルー）。
+    アノテーションや Validator 属性を持つクラスのみがスキーマとして認識される。"""
 
-    def test_empty_class_is_detected_as_class_schema(self):
-        """_is_class_schema() が空クラスを True と判定する"""
+    def test_empty_class_is_not_detected_as_class_schema(self):
+        """_is_class_schema() が空クラスを False と判定する（スキーマではない）"""
         from validkit.validator import _is_class_schema
 
         class Empty:
             pass
 
-        assert _is_class_schema(Empty) is True
+        assert _is_class_schema(Empty) is False
 
     def test_empty_class_produces_empty_dict_schema(self):
-        """_class_to_schema() が空クラスから空辞書を返す"""
+        """_class_to_schema() に空クラスを渡しても空辞書を返す（内部的には安全）"""
         from validkit.validator import _class_to_schema
 
         class Empty:
@@ -951,22 +953,38 @@ class TestEmptyClassSchema:
 
         assert _class_to_schema(Empty) == {}
 
-    def test_validate_with_empty_class_accepts_any_data(self):
-        """空クラスをスキーマとして validate() に渡すと、スキーマ外のキーは除外されて空辞書が返る"""
+    def test_validate_with_empty_class_passes_through_data(self):
+        """空クラスはスキーマではないので validate() はデータをそのまま返す（パススルー）"""
         class Empty:
             pass
 
-        # Empty schema {} strips all unknown keys — consistent with dict schema behavior
+        # Empty class is NOT a class schema; validate() passes the value through unchanged.
         result = validate({"foo": 1, "bar": "baz"}, Empty)
-        assert result == {}
+        assert result == {"foo": 1, "bar": "baz"}
 
-    def test_validate_with_empty_class_accepts_empty_data(self):
-        """空クラスをスキーマとして validate() に渡すと、空辞書でも通過する"""
+    def test_validate_with_empty_class_passes_through_empty_data(self):
+        """空クラスをスキーマとして validate() に渡すと、空辞書もそのまま返す"""
         class Empty:
             pass
 
         result = validate({}, Empty)
         assert result == {}
+
+    def test_validate_with_empty_class_passes_through_list_input(self):
+        """空クラスはスキーマではないので、リストを渡してもそのまま返す（パススルー）"""
+        class Empty:
+            pass
+
+        result = validate([1, 2, 3], Empty)
+        assert result == [1, 2, 3]
+
+    def test_validate_with_empty_class_passes_through_none_input(self):
+        """空クラスはスキーマではないので None を渡してもそのまま返す（パススルー）"""
+        class Empty:
+            pass
+
+        result = validate(None, Empty)
+        assert result is None
 
     def test_basic_types_are_not_class_schemas(self):
         """基本型 (str / int / float / bool) は _is_class_schema() で False になる"""
@@ -991,3 +1009,82 @@ class TestEmptyClassSchema:
 
         schema = Schema(_class_to_schema(Empty))
         assert schema.generate_sample() == {}
+
+
+# ---------------------------------------------------------------------------
+# _is_class_schema() の過剰検出リグレッション防止テスト
+# ---------------------------------------------------------------------------
+
+class TestIsClassSchemaTooBroad:
+    """_is_class_schema() が標準ライブラリクラスや任意クラスを
+    誤ってクラス記法スキーマと判定しないことを検証するテスト群。
+
+    これらのテストは「すべての非基本・非 Validator クラスを True にする」修正の
+    リグレッション（後退）を防ぐために作成した。
+    正しい動作: own __annotations__ または Validator 属性を持つクラスのみを True とする。
+    """
+
+    def test_datetime_datetime_is_not_a_class_schema(self):
+        """datetime.datetime はスキーマではなく型として使われるべきなので False"""
+        import datetime
+        from validkit.validator import _is_class_schema
+
+        assert _is_class_schema(datetime.datetime) is False
+
+    def test_datetime_date_is_not_a_class_schema(self):
+        """datetime.date も同様に False"""
+        import datetime
+        from validkit.validator import _is_class_schema
+
+        assert _is_class_schema(datetime.date) is False
+
+    def test_pathlib_path_is_not_a_class_schema(self):
+        """pathlib.Path もスキーマと誤認されてはならない"""
+        import pathlib
+        from validkit.validator import _is_class_schema
+
+        assert _is_class_schema(pathlib.Path) is False
+
+    def test_empty_class_is_not_a_class_schema(self):
+        """アノテーションも Validator 属性もない空クラスはクラス記法スキーマと見なさない"""
+        from validkit.validator import _is_class_schema
+
+        class Empty:
+            pass
+
+        assert _is_class_schema(Empty) is False
+
+    def test_annotated_class_is_a_class_schema(self):
+        """型アノテーションを持つユーザー定義クラスはクラス記法スキーマとして認識される"""
+        from validkit.validator import _is_class_schema
+
+        class Profile:
+            name: str
+            age: int
+
+        assert _is_class_schema(Profile) is True
+
+    def test_validator_attr_class_is_a_class_schema(self):
+        """Validator 属性のみを持つクラスはクラス記法スキーマとして認識される"""
+        from validkit.validator import _is_class_schema
+
+        class Config:
+            role = v.str()
+
+        assert _is_class_schema(Config) is True
+
+    def test_validate_with_datetime_class_does_not_treat_as_empty_schema(self):
+        """validate() で datetime.datetime を schema に渡しても誤って {} スキーマで処理されない"""
+        import datetime
+        from validkit.validator import _is_class_schema
+
+        # With the overly-broad _is_class_schema(), validate(data, datetime.datetime) would
+        # try to validate data as an empty dict schema, stripping all keys to {}.
+        # The correct behavior is to NOT treat datetime.datetime as a class schema,
+        # so validate() passes the data through unchanged (passthrough path).
+        assert _is_class_schema(datetime.datetime) is False
+
+        data = {"year": 2024, "month": 1, "day": 15}
+        result = validate(data, datetime.datetime)
+        # Must NOT silently strip all keys to {}
+        assert result == data

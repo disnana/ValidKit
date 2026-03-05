@@ -35,10 +35,14 @@ def _is_class_schema(schema: Any) -> bool:
     """Return True if *schema* is a class that should be treated as a class-based schema.
 
     A class qualifies when it:
-    - is a plain class (not one of the basic shorthand types), and
-    - is not a Validator subclass.
+    - is a plain class (not one of the basic shorthand types),
+    - is not a Validator subclass, and
+    - either declares own ``__annotations__`` (non-empty) or has at least one Validator
+      class attribute in its own ``__dict__``.
 
-    An empty class (no annotations, no Validator attributes) is treated as an empty schema.
+    Using ``cls.__dict__.get("__annotations__", {})`` (rather than ``hasattr``) ensures that
+    inherited annotations from parent classes or stdlib types (e.g. ``datetime.datetime``,
+    ``pathlib.Path``) do not cause false positives.
     """
     if not isinstance(schema, type):
         return False
@@ -46,7 +50,18 @@ def _is_class_schema(schema: Any) -> bool:
         return False
     if issubclass(schema, Validator):
         return False
-    return True
+    # Check only the class's OWN annotations — not those inherited from base classes.
+    # This prevents stdlib classes (datetime.datetime, pathlib.Path, etc.) from being
+    # mistakenly detected as class schemas when their parent classes carry annotations.
+    own_annotations = schema.__dict__.get("__annotations__", {})
+    if own_annotations:
+        return True
+    # Also accept classes whose only schema fields are Validator instances.
+    return any(
+        isinstance(val, Validator)
+        for k, val in schema.__dict__.items()
+        if not k.startswith("_")
+    )
 
 
 class Schema(Generic[T]):

@@ -233,6 +233,8 @@ result = validate({"host": "db.local"}, Config)
 | `Any` / 不明な型 | チェックなし（パススルー） |
 | `Validator` インスタンス | ValidKit の完全なバリデーション |
 
+> **注意**: `Union[int, str]` のように `None` を含まない非 Optional な Union 型は現在サポートされていません。`validate()` の呼び出し時（スキーマ変換フェーズ）に `TypeError` が送出されます。代わりに `Optional[T]`（= `Union[T, None]`）か具体的な単一型を使用してください。複数の型を受け付けたい場合は `v.instance(MyBaseClass)` などを検討してください。
+
 ### IDE 補完を効かせる（TypedDict + Schema）
 
 `Schema[T]` クラスを使うと、IDE（PyCharm / VS Code）での型補完が有効になります。
