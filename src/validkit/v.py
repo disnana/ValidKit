@@ -253,4 +253,53 @@ class VBuilder:
     def oneof(self, choices: List[Any]) -> OneOfValidator:
         return OneOfValidator(choices)
 
+    @staticmethod
+    def auto_infer(data: Any) -> Any:
+        """
+        渡されたデータから ValidKit スキーマを逆生成します。
+
+        各値の型を再帰的に解析し、対応するバリデータを返します。
+        dict を渡すとネストしたスキーマ (dict) を返します。
+
+        Args:
+            data: スキーマを推論する元データ。
+
+        Returns:
+            データ構造に対応する ValidKit スキーマ。
+
+            - ``dict``  → 各キーに対応するバリデータを含む dict スキーマ
+            - ``list``  → :class:`ListValidator` (要素が存在する場合は最初の要素から推論)
+            - ``bool``  → :class:`BoolValidator`  (int より先に評価)
+            - ``int``   → :class:`NumberValidator` (int)
+            - ``float`` → :class:`NumberValidator` (float)
+            - ``str``   → :class:`StringValidator`
+
+        Example::
+
+            data = {"name": "Alice", "age": 30, "active": True}
+            schema = v.auto_infer(data)
+            # -> {"name": v.str(), "age": v.int(), "active": v.bool()}
+
+            nested = {"user": {"id": 1, "tags": ["admin"]}}
+            schema = v.auto_infer(nested)
+            # -> {"user": {"id": v.int(), "tags": v.list(v.str())}}
+        """
+        # bool must be checked before int because bool is a subclass of int
+        if isinstance(data, bool):
+            return BoolValidator()
+        if isinstance(data, int):
+            return NumberValidator(int)
+        if isinstance(data, float):
+            return NumberValidator(float)
+        if isinstance(data, str):
+            return StringValidator()
+        if isinstance(data, list):
+            item_schema: Union[Validator, Dict[str, Any]] = (
+                VBuilder.auto_infer(data[0]) if data else StringValidator()
+            )
+            return ListValidator(item_schema)
+        if isinstance(data, dict):
+            return {key: VBuilder.auto_infer(value) for key, value in data.items()}
+        return Validator()
+
 v = VBuilder()

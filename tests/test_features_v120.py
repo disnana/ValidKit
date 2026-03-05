@@ -210,3 +210,115 @@ class TestGenerateSample:
         sample1 = schema.generate_sample()
         sample2 = schema.generate_sample()
         assert sample1 == sample2
+
+
+# ============================================================
+# v.auto_infer() のテスト
+# ============================================================
+
+class TestAutoInfer:
+    def test_primitive_str(self):
+        """str 値から StringValidator が生成される"""
+        from validkit.v import StringValidator
+        schema = v.auto_infer("hello")
+        assert isinstance(schema, StringValidator)
+
+    def test_primitive_int(self):
+        """int 値から NumberValidator(int) が生成される"""
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(42)
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is int
+
+    def test_primitive_float(self):
+        """float 値から NumberValidator(float) が生成される"""
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(3.14)
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is float
+
+    def test_primitive_bool(self):
+        """bool 値から BoolValidator が生成される (int の前に評価される)"""
+        from validkit.v import BoolValidator
+        schema = v.auto_infer(True)
+        assert isinstance(schema, BoolValidator)
+
+    def test_bool_not_confused_with_int(self):
+        """bool は int のサブクラスだが、NumberValidator ではなく BoolValidator が返る"""
+        from validkit.v import BoolValidator, NumberValidator
+        schema_true = v.auto_infer(True)
+        schema_false = v.auto_infer(False)
+        assert isinstance(schema_true, BoolValidator)
+        assert isinstance(schema_false, BoolValidator)
+        # False (== 0) が int と誤認されないことを確認
+        assert not isinstance(schema_false, NumberValidator)
+
+    def test_list_with_str_elements(self):
+        """str 要素のリストから v.list(v.str()) が生成される"""
+        from validkit.v import ListValidator, StringValidator
+        schema = v.auto_infer(["a", "b", "c"])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_list_with_int_elements(self):
+        """int 要素のリストから v.list(v.int()) が生成される"""
+        from validkit.v import ListValidator, NumberValidator
+        schema = v.auto_infer([1, 2, 3])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, NumberValidator)
+        assert schema._item_validator._type_cls is int
+
+    def test_empty_list_defaults_to_str(self):
+        """空リストは v.list(v.str()) にデフォルトされる"""
+        from validkit.v import ListValidator, StringValidator
+        schema = v.auto_infer([])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_flat_dict(self):
+        """フラットな dict から対応するバリデータを持つ dict スキーマが生成される"""
+        from validkit.v import StringValidator, NumberValidator, BoolValidator
+        data = {"name": "Alice", "age": 30, "active": True}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["age"], NumberValidator)
+        assert schema["age"]._type_cls is int
+        assert isinstance(schema["active"], BoolValidator)
+
+    def test_nested_dict(self):
+        """ネストした dict は再帰的にスキーマ化される"""
+        from validkit.v import StringValidator, NumberValidator
+        data = {"user": {"id": 1, "name": "Bob"}}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["user"], dict)
+        assert isinstance(schema["user"]["id"], NumberValidator)
+        assert isinstance(schema["user"]["name"], StringValidator)
+
+    def test_dict_with_list_value(self):
+        """dict 内の list フィールドも正しく推論される"""
+        from validkit.v import ListValidator, StringValidator
+        data = {"tags": ["python", "java"]}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["tags"], ListValidator)
+        assert isinstance(schema["tags"]._item_validator, StringValidator)
+
+    def test_inferred_schema_can_validate_original_data(self):
+        """auto_infer で生成したスキーマで元データをバリデーションできる"""
+        data = {"name": "Alice", "age": 30, "score": 9.5, "active": True}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result["age"] == 30
+        assert result["score"] == 9.5
+        assert result["active"] is True
+
+    def test_inferred_nested_schema_can_validate_original_data(self):
+        """ネスト付き auto_infer スキーマで元データをバリデーションできる"""
+        data = {"user": {"id": 1, "tags": ["admin", "editor"]}}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["user"]["id"] == 1
+        assert result["user"]["tags"] == ["admin", "editor"]
