@@ -11,9 +11,35 @@ from typing import (
     Literal,
     cast,
 )
-from .v import Validator, v
+from .v import Validator, v, InstanceValidator, StringValidator, NumberValidator, BoolValidator
 
 T = TypeVar("T")
+
+# Basic Python types supported as schema shorthand (str, int, float, bool)
+_BASIC_TYPES = (str, int, float, bool)
+
+
+def _is_class_schema(schema: Any) -> bool:
+    """Return True if *schema* is a class that should be treated as a class-based schema.
+
+    A class qualifies when it:
+    - is a plain class (not one of the basic shorthand types),
+    - is not a Validator subclass, and
+    - either declares ``__annotations__`` or has at least one Validator class attribute.
+    """
+    if not isinstance(schema, type):
+        return False
+    if schema in _BASIC_TYPES:
+        return False
+    if issubclass(schema, Validator):
+        return False
+    if hasattr(schema, "__annotations__"):
+        return True
+    return any(
+        isinstance(vars(schema).get(k), Validator)
+        for k in vars(schema)
+        if not k.startswith("_")
+    )
 
 
 class Schema(Generic[T]):
@@ -91,6 +117,74 @@ class ValidationResult:
         self.data = data
         self.errors = errors or []
 
+def _class_to_schema(cls: type) -> Dict[str, Any]:
+    """クラスのアノテーションとクラス属性からスキーマ辞書を生成します。
+
+    優先順位:
+    1. クラス属性が Validator インスタンスの場合、そのまま使用する。
+    2. 型アノテーションが str/int/float/bool の場合、ショートハンドとして使用する。
+    3. それ以外のクラス型の場合、isinstance チェックを行う InstanceValidator を生成する。
+
+    クラス属性として Validator 以外のデフォルト値が定義されている場合、
+    対応する Validator に .default() 相当の設定を自動付与します。
+
+    Args:
+        cls: ``__annotations__`` を持つ任意のクラス。
+
+    Returns:
+        validkit のスキーマ辞書。
+    """
+    schema: Dict[str, Any] = {}
+
+    # 1. Collect fields defined as Validator class attributes (with or without annotation)
+    for key in vars(cls):
+        if key.startswith("_"):
+            continue
+        attr = vars(cls)[key]
+        if isinstance(attr, Validator):
+            schema[key] = attr
+
+    # 2. Process type annotations
+    annotations: Dict[str, Any] = getattr(cls, "__annotations__", {})
+    for key, type_hint in annotations.items():
+        if key in schema:
+            # Already have a Validator class attribute for this field — skip
+            continue
+
+        if type_hint in _BASIC_TYPES:
+            # Shorthand type; check for a non-Validator class attribute as default
+            if key in vars(cls) and not isinstance(vars(cls)[key], Validator):
+                default_val = vars(cls)[key]
+                # Promote shorthand to a full Validator with a default
+                if type_hint is str:
+                    val: Validator = StringValidator()
+                elif type_hint is float:
+                    val = NumberValidator(float)
+                elif type_hint is bool:
+                    val = BoolValidator()
+                else:
+                    val = NumberValidator(int)
+                val._has_default = True
+                val._default_value = default_val
+                val._optional = True
+                schema[key] = val
+            else:
+                schema[key] = type_hint  # handled as shorthand in validate_internal
+        elif isinstance(type_hint, type):
+            # Custom class type → isinstance check
+            inst_val = InstanceValidator(type_hint)
+            if key in vars(cls) and not isinstance(vars(cls)[key], Validator):
+                inst_val._has_default = True
+                inst_val._default_value = vars(cls)[key]
+                inst_val._optional = True
+            schema[key] = inst_val
+        else:
+            # Fallback: pass through (e.g. typing generics)
+            schema[key] = type_hint
+
+    return schema
+
+
 def validate_internal(
     value: Any, 
     schema: Any, 
@@ -111,6 +205,10 @@ def validate_internal(
             schema = v.float()
         elif schema is bool:
             schema = v.bool()
+
+    # 1b. Class-based schema (class with __annotations__ or Validator class attributes)
+    if _is_class_schema(schema):
+        schema = _class_to_schema(schema)
 
     # 2. Validator objects
     if isinstance(schema, Validator):
@@ -223,7 +321,7 @@ def _generate_sample(schema: Any) -> Any:
     Schema.generate_sample() の内部実装です。
 
     Args:
-        schema: dict スキーマ、Validator インスタンス、または Python 型。
+        schema: dict スキーマ、Validator インスタンス、Python 型、またはクラス。
 
     Returns:
         生成されたサンプル値。
@@ -231,6 +329,10 @@ def _generate_sample(schema: Any) -> Any:
     # 1. Python 型のショートハンド
     if isinstance(schema, type) and schema in _TYPE_DUMMY:
         return _TYPE_DUMMY[schema]
+
+    # 1b. クラスベーススキーマ → dict スキーマに変換してから再帰処理
+    if _is_class_schema(schema):
+        return _generate_sample(_class_to_schema(schema))
 
     # 2. Validator オブジェクト
     if isinstance(schema, Validator):
@@ -240,7 +342,7 @@ def _generate_sample(schema: Any) -> Any:
         if schema._examples:
             return schema._examples[0]
         # 型ダミーを型名から推定
-        from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator
+        from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator, InstanceValidator
         if isinstance(schema, StringValidator):
             return "example"
         if isinstance(schema, NumberValidator):
@@ -255,6 +357,8 @@ def _generate_sample(schema: Any) -> Any:
         if isinstance(schema, DictValidator):
             inner = _generate_sample(schema._value_validator)
             return {"key": inner}
+        if isinstance(schema, InstanceValidator):
+            return None
         return None
 
     # 3. dict スキーマ → 再帰的に走査
