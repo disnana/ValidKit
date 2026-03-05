@@ -358,3 +358,67 @@ class TestAutoInfer:
         data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
         with pytest.raises(TypeError, match="auto_infer: unsupported type"):
             v.auto_infer(data)
+
+    def test_type_map_with_validator_instance(self):
+        """type_map にバリデータインスタンスを渡すとカスタム型を処理できる"""
+        import datetime
+        from validkit.v import StringValidator
+        schema = v.auto_infer(
+            datetime.datetime(2024, 1, 1),
+            type_map={datetime.datetime: v.str()},
+        )
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_with_callable(self):
+        """type_map に呼び出し可能オブジェクトを渡すと値を受けて Validator を返せる"""
+        import datetime
+        from validkit.v import StringValidator
+        dt = datetime.datetime(2024, 6, 15, 12, 0, 0)
+        schema = v.auto_infer(
+            dt,
+            type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+        )
+        assert isinstance(schema, StringValidator)
+        assert schema._description == str(dt)
+
+    def test_type_map_in_dict_field(self):
+        """dict 内のカスタム型フィールドも type_map で処理される"""
+        import datetime
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(data, type_map={datetime.date: v.str()})
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_type_map_in_list_element(self):
+        """list 内のカスタム型も type_map で処理される"""
+        import datetime
+        from validkit.v import ListValidator, StringValidator
+        data = [datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)]
+        schema = v.auto_infer(data, type_map={datetime.date: v.str()})
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_type_map_with_custom_class(self):
+        """ユーザー定義のカスタムクラスも type_map で処理できる"""
+        from validkit.v import StringValidator
+
+        class MyModel:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+        schema = v.auto_infer(MyModel("test"), type_map={MyModel: v.str()})
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_without_match_still_raises_type_error(self):
+        """type_map に対象型がなければ依然として TypeError が送出される"""
+        import datetime
+
+        class Unrelated:
+            pass
+
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(
+                Unrelated(),
+                type_map={datetime.date: v.str()},  # Unrelated は含まれない
+            )

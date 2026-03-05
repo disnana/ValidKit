@@ -254,7 +254,10 @@ class VBuilder:
         return OneOfValidator(choices)
 
     @staticmethod
-    def auto_infer(data: Any) -> Any:
+    def auto_infer(
+        data: Any,
+        type_map: Optional[Dict[type, Any]] = None,
+    ) -> Any:
         """
         渡されたデータから ValidKit スキーマを逆生成します。
 
@@ -263,10 +266,16 @@ class VBuilder:
 
         Args:
             data: スキーマを推論する元データ。
+            type_map: カスタム型とバリデータのマッピング (省略可能)。
+                キーに Python の型、値に :class:`Validator` インスタンス
+                **または** ``(value) -> Validator`` 形式の呼び出し可能オブジェクトを
+                指定します。組み込み型より先に評価されるため、組み込み型の挙動を
+                上書きすることもできます。
 
         Returns:
             データ構造に対応する ValidKit スキーマ。
 
+            - ``type_map`` に一致する型 → 対応するバリデータ (または呼び出し結果)
             - ``None``  → :class:`Validator` に ``.optional()`` を付けたもの (型不明のため optional 扱い)
             - ``dict``  → 各キーに対応するバリデータを含む dict スキーマ
             - ``list``  → :class:`ListValidator` (要素が存在する場合は最初の要素から推論)
@@ -276,7 +285,7 @@ class VBuilder:
             - ``str``   → :class:`StringValidator`
 
         Raises:
-            TypeError: サポートされていない型 (datetime, カスタムクラスなど) が渡された場合。
+            TypeError: ``type_map`` に一致せず、かつサポートされていない型が渡された場合。
 
         Example::
 
@@ -292,7 +301,29 @@ class VBuilder:
             data = {"name": "Alice", "nickname": None}
             schema = v.auto_infer(data)
             # -> {"name": v.str(), "nickname": Validator().optional()}
+
+            # カスタム型は type_map で対応できる
+            import datetime
+            schema = v.auto_infer(
+                {"ts": datetime.datetime(2024, 1, 1)},
+                type_map={datetime.datetime: v.str()},
+            )
+            # -> {"ts": StringValidator}
+
+            # 呼び出し可能オブジェクトも受け付ける (値を受け取って Validator を返す)
+            schema = v.auto_infer(
+                {"ts": datetime.datetime(2024, 1, 1)},
+                type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+            )
         """
+        # User-supplied type_map is checked first so custom types (and overrides) are handled
+        if type_map:
+            for custom_type, handler in type_map.items():
+                if isinstance(data, custom_type):
+                    # callable but not a Validator instance → call with the value
+                    if callable(handler) and not isinstance(handler, Validator):
+                        return handler(data)
+                    return handler
         # None: type cannot be inferred, mark as optional with no type constraint
         if data is None:
             return Validator().optional()
@@ -307,14 +338,15 @@ class VBuilder:
             return StringValidator()
         if isinstance(data, list):
             item_schema: Union[Validator, Dict[str, Any]] = (
-                VBuilder.auto_infer(data[0]) if data else StringValidator()
+                VBuilder.auto_infer(data[0], type_map) if data else StringValidator()
             )
             return ListValidator(item_schema)
         if isinstance(data, dict):
-            return {key: VBuilder.auto_infer(value) for key, value in data.items()}
+            return {key: VBuilder.auto_infer(value, type_map) for key, value in data.items()}
         raise TypeError(
             f"auto_infer: unsupported type '{type(data).__name__}'. "
-            "Supported types are: None, bool, int, float, str, list, dict."
+            "Pass a type_map to handle custom types, or use one of the built-in "
+            "supported types: None, bool, int, float, str, list, dict."
         )
 
 v = VBuilder()
