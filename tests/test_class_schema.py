@@ -1209,9 +1209,17 @@ class TestClassSchemaAnnotationInheritance:
 # TDD Cycle 3: PEP 604 ユニオン記法 (T | None, T1 | T2) のサポート
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason="PEP 604 union syntax (T | None) creates types.UnionType only on Python 3.10+",
+)
 class TestPEP604UnionSyntax:
     """Python 3.10+ の PEP 604 パイプ記法 (T | None, T1 | T2) が
-    typing.Optional / typing.Union と同等に処理されることを検証するテスト群。"""
+    typing.Optional / typing.Union と同等に処理されることを検証するテスト群。
+
+    PEP 604 の T | None 記法は Python 3.10+ でのみ有効なため、
+    このテストクラスは Python 3.10 未満では自動的にスキップされる。
+    """
 
     # ---- Optional-like: T | None ----
 
@@ -1325,3 +1333,120 @@ class TestPEP604UnionSyntax:
             _type_hint_to_validator(int | str)
 
         assert "int" in str(exc_info.value) or "str" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# TDD Cycle 4: Python 3.9 互換性 (types.UnionType ガード)
+# ---------------------------------------------------------------------------
+
+class TestPEP604Python39Compatibility:
+    """Python 3.9 では types.UnionType が存在しない。
+    _type_hint_to_validator() がモジュールレベルの _UnionType ガード変数を使用し、
+    呼び出し時に _types.UnionType を直接参照しないことを検証する。
+    (呼び出し時直接参照は Python 3.9 で AttributeError を発生させる)"""
+
+    def test_module_has_union_type_guard(self):
+        """validkit.validator モジュールは _UnionType モジュールレベル変数を持つ必要がある。
+        Python 3.10+ では types.UnionType に設定され、Python 3.9 では None になる。"""
+        import validkit.validator as vmod
+        assert hasattr(vmod, '_UnionType'), (
+            "_UnionType module-level guard not found in validkit.validator. "
+            "This is required for Python 3.9 compatibility where types.UnionType "
+            "does not exist."
+        )
+
+    def test_non_union_hints_work_when_union_type_guard_is_none(self):
+        """_UnionType を None に設定した状態 (Python 3.9 シミュレーション) でも
+        基本型ヒントが AttributeError を発生させない。"""
+        import validkit.validator as vmod
+
+        original = vmod._UnionType
+        try:
+            vmod._UnionType = None  # Simulate Python 3.9: no types.UnionType
+            val_str = vmod._type_hint_to_validator(str)
+            val_int = vmod._type_hint_to_validator(int)
+            val_float = vmod._type_hint_to_validator(float)
+            val_bool = vmod._type_hint_to_validator(bool)
+            assert val_str is not None
+            assert val_int is not None
+            assert val_float is not None
+            assert val_bool is not None
+        except AttributeError as e:
+            pytest.fail(
+                f"AttributeError raised on non-union hint when _UnionType=None "
+                f"(Python 3.9 incompatibility): {e}"
+            )
+        finally:
+            vmod._UnionType = original
+
+    def test_optional_hint_works_when_union_type_guard_is_none(self):
+        """typing.Optional[str] は _UnionType=None でも正しく処理される。"""
+        from typing import Optional
+        import validkit.validator as vmod
+
+        original = vmod._UnionType
+        try:
+            vmod._UnionType = None  # Simulate Python 3.9
+            val = vmod._type_hint_to_validator(Optional[str])
+            assert val is not None
+            assert val._optional is True
+        except AttributeError as e:
+            pytest.fail(
+                f"AttributeError raised on Optional[str] when _UnionType=None: {e}"
+            )
+        finally:
+            vmod._UnionType = original
+
+    def test_list_hint_works_when_union_type_guard_is_none(self):
+        """List[str] は _UnionType=None でも正しく処理される。"""
+        from typing import List
+        import validkit.validator as vmod
+
+        original = vmod._UnionType
+        try:
+            vmod._UnionType = None  # Simulate Python 3.9
+            val = vmod._type_hint_to_validator(List[str])
+            assert val is not None
+        except AttributeError as e:
+            pytest.fail(
+                f"AttributeError raised on List[str] when _UnionType=None: {e}"
+            )
+        finally:
+            vmod._UnionType = original
+
+    def test_validate_with_class_schema_works_when_union_type_guard_is_none(self):
+        """validate() でクラススキーマを使っても _UnionType=None で動作する。"""
+        from typing import Optional
+        from validkit import validate
+        import validkit.validator as vmod
+
+        class Schema:
+            name: str
+            age: Optional[int]
+
+        original = vmod._UnionType
+        try:
+            vmod._UnionType = None  # Simulate Python 3.9
+            result = validate({"name": "Alice", "age": 30}, Schema)
+            assert result["name"] == "Alice"
+            assert result["age"] == 30
+        except AttributeError as e:
+            pytest.fail(
+                f"AttributeError raised in validate() when _UnionType=None: {e}"
+            )
+        finally:
+            vmod._UnionType = original
+
+    def test_union_type_guard_value_on_current_python(self):
+        """現在の Python バージョンに応じた _UnionType の値を検証する。"""
+        import types
+        import validkit.validator as vmod
+
+        if sys.version_info >= (3, 10):
+            assert vmod._UnionType is types.UnionType, (
+                "On Python 3.10+, _UnionType must be types.UnionType"
+            )
+        else:
+            assert vmod._UnionType is None, (
+                "On Python < 3.10, _UnionType must be None"
+            )
