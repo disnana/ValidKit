@@ -13,6 +13,7 @@ from typing import (
     Literal,
     cast,
 )
+import types as _types
 from .v import (
     Validator,
     v,
@@ -169,8 +170,8 @@ def _type_hint_to_validator(
     origin = get_origin(hint)
     args = get_args(hint)
 
-    # --- Optional[T] / Union[T, None] ---
-    if origin is Union:
+    # --- Optional[T] / Union[T, None] and PEP 604 T | None / T1 | T2 ---
+    if origin is Union or isinstance(hint, _types.UnionType):
         non_none_args = [a for a in args if a is not type(None)]
         if type(None) in args:
             optional_flag = True
@@ -180,7 +181,8 @@ def _type_hint_to_validator(
         else:
             # Union with multiple non-None members is not supported: fail fast instead of silently
             # disabling type checking. (This also covers Union[T1, T2, None] where None is present
-            # but there are still multiple non-None members and no single target type can be inferred.)
+            # but there are still multiple non-None members and no single target type can be inferred.
+            # Applies equally to PEP 604 syntax: int | str | None raises the same error.)
             raise TypeError(
                 f"typing.Union with multiple non-None members is not supported as schema annotations: {hint!r}. "
                 "Use Optional[T] (Union[T, None]) with a single non-None type, or a plain type instead."

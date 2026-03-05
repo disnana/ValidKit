@@ -1203,3 +1203,125 @@ class TestClassSchemaAnnotationInheritance:
         result = validate({"role": "admin"}, ChildSchema)
         assert result == {"role": "admin"}
         assert "x" not in result
+
+
+# ---------------------------------------------------------------------------
+# TDD Cycle 3: PEP 604 ユニオン記法 (T | None, T1 | T2) のサポート
+# ---------------------------------------------------------------------------
+
+class TestPEP604UnionSyntax:
+    """Python 3.10+ の PEP 604 パイプ記法 (T | None, T1 | T2) が
+    typing.Optional / typing.Union と同等に処理されることを検証するテスト群。"""
+
+    # ---- Optional-like: T | None ----
+
+    def test_str_or_none_is_optional(self):
+        """str | None は Optional[str] と同等に扱われ、省略可能フィールドになる"""
+        from validkit.validator import _type_hint_to_validator
+        val = _type_hint_to_validator(str | None)
+        assert val._optional is True, "str | None validator must be optional"
+
+    def test_str_or_none_passes_string_value(self):
+        """str | None アノテーションのフィールドは文字列値を受け入れる"""
+        from validkit import validate
+
+        class Schema:
+            nickname: str | None
+
+        result = validate({"nickname": "Alice"}, Schema)
+        assert result == {"nickname": "Alice"}
+
+    def test_str_or_none_allows_missing_field(self):
+        """str | None アノテーションのフィールドは省略可能"""
+        from validkit import validate
+
+        class Schema:
+            nickname: str | None
+
+        result = validate({}, Schema)
+        assert "nickname" not in result or result.get("nickname") is None
+
+    def test_int_or_none_is_optional(self):
+        """int | None は Optional[int] と同等に扱われ、省略可能フィールドになる"""
+        from validkit.validator import _type_hint_to_validator
+        val = _type_hint_to_validator(int | None)
+        assert val._optional is True
+
+    def test_none_or_str_is_optional(self):
+        """None | str も str | None と同等に扱われる"""
+        from validkit.validator import _type_hint_to_validator
+        val = _type_hint_to_validator(None | str)
+        assert val._optional is True
+
+    def test_pep604_optional_rejects_wrong_type(self):
+        """str | None フィールドに非文字列を渡すと ValidationError が送出される"""
+        from validkit import validate, ValidationError
+
+        class Schema:
+            label: str | None
+
+        with pytest.raises((TypeError, ValidationError)):
+            validate({"label": 123}, Schema)
+
+    # ---- Multi-member: T1 | T2 (should raise TypeError) ----
+
+    def test_int_or_str_raises_type_error(self):
+        """int | str は複数の非 None メンバーを持つため TypeError を送出する"""
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="multiple non-None members"):
+            _type_hint_to_validator(int | str)
+
+    def test_int_or_str_or_none_raises_type_error(self):
+        """int | str | None も複数の非 None メンバーを持つため TypeError を送出する"""
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError, match="multiple non-None members"):
+            _type_hint_to_validator(int | str | None)
+
+    def test_validate_with_class_using_multi_member_pep604_raises(self):
+        """クラスアノテーションに int | str を使うと validate() が TypeError を送出する"""
+        from validkit import validate
+
+        class BadSchema:
+            value: int | str
+
+        with pytest.raises(TypeError, match="multiple non-None members"):
+            validate({"value": 1}, BadSchema)
+
+    # ---- Validator type (inner type) is correct ----
+
+    def test_str_or_none_inner_validator_is_string_validator(self):
+        """str | None から生成される内部バリデータは StringValidator であるべき"""
+        from validkit.validator import _type_hint_to_validator
+        from validkit.v import StringValidator
+        val = _type_hint_to_validator(str | None)
+        assert isinstance(val, StringValidator), (
+            f"Expected StringValidator, got {type(val).__name__}"
+        )
+
+    def test_int_or_none_inner_validator_is_int_validator(self):
+        """int | None から生成される内部バリデータは NumberValidator であるべき"""
+        from validkit.validator import _type_hint_to_validator
+        from validkit.v import NumberValidator
+        val = _type_hint_to_validator(int | None)
+        assert isinstance(val, NumberValidator), (
+            f"Expected NumberValidator, got {type(val).__name__}"
+        )
+
+    def test_list_or_none_produces_optional_list_validator(self):
+        """list[str] | None は省略可能な ListValidator を生成する"""
+        from validkit.validator import _type_hint_to_validator
+        from validkit.v import ListValidator
+        val = _type_hint_to_validator(list[str] | None)
+        assert isinstance(val, ListValidator)
+        assert val._optional is True
+
+    def test_pep604_error_message_contains_hint_repr(self):
+        """TypeError のメッセージはヒントの repr を含む"""
+        from validkit.validator import _type_hint_to_validator
+
+        with pytest.raises(TypeError) as exc_info:
+            _type_hint_to_validator(int | str)
+
+        assert "int" in str(exc_info.value) or "str" in str(exc_info.value)
