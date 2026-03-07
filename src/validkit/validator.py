@@ -472,7 +472,6 @@ def _generate_validator_sample(schema: Validator) -> Any:
             return _validate_generated_value(schema, schema._examples[0])
         # 任意クラスの妥当なダミー値は一般に構成できないため、従来どおり None を返す。
         return None
-
     if schema._has_default:
         return _validate_generated_value(schema, schema._default_value)
     if schema._examples:

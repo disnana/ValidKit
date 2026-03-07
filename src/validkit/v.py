@@ -306,7 +306,6 @@ class VBuilder:
             validate({"ts": datetime.datetime.now()}, schema)
         """
         return InstanceValidator(type_cls)
-
     @staticmethod
     def auto_infer(
         data: Any,

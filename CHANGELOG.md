@@ -1,39 +1,45 @@
 # Changelog
 
-このファイルは `git tag` とコミット履歴をもとに、バージョンごとの変更点を再構成したものです。
+このファイルは `git tag`・コミット履歴・バージョン更新コミットをもとに再構成した変更履歴です。
 
-- タグが存在する版はタグを基準に整理しています。
-- `1.2.0` は現時点で `git tag` が見当たらないため、`__version__ = "1.2.0"` とリリースコミット（2026-02-27）を基準に整理しています。
+- `v1.0.0` 〜 `v1.2.0` はリポジトリ内のタグを基準に整理しています。
+- `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
+- 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
 ## Unreleased
 
 ### Added
 - クラス記法スキーマ (`class Config: ...`) を追加し、型アノテーションと `Validator` クラス属性を既存の dict スキーマ検証経路へ変換できるようになりました。
 - `v.instance(type_cls)` / `InstanceValidator` を追加し、任意クラスに対する `isinstance` ベースの検証と `.coerce()` をサポートしました。
-- `v.auto_infer(data, type_map=None, schema_overrides=None)` を追加し、既存データから ValidKit スキーマを逆生成できるようになりました。
-- `type_map` によるカスタム型対応を追加しました。callable が `Validator` を返す場合はそのまま使用し、プリミティブ値を返す場合は変換後の値で再推論します。
-- `schema_overrides` を追加し、トップレベルの dict フィールドに対して推論結果を明示的なバリデータで上書きできるようになりました。
+
+### Changed
+- `Schema(...)` は実行時に dict スキーマだけでなく class 記法スキーマも直接ラップできるようになりました。
+- README / `docs/index.md` / 回帰テストをクラス記法スキーマと Python 3.9+ 型ヒント対応に合わせて更新しました。
 
 ### Fixed
 - クラス記法スキーマで `Optional[T]` / `Union[T, None]` が必須扱いになっていた問題を修正しました。
 - `typing.Union` / PEP 604 (`T | None`) のうち、`None` 以外の複数メンバーを持つ型がサイレントにパススルーされる問題を修正し、明示的に `TypeError` を送出するようにしました。
 - Python 3.9 で `types.UnionType` や `_UnionType: type | None` に起因する import / 実行時エラーが発生しないよう互換性を改善しました。
 - `InstanceValidator.coerce()` が元例外を失っていた問題を修正し、例外チェーンを保持するようにしました。
-- `schema_overrides` がネストした dict やリスト要素に漏れて適用される問題を修正しました。
-- `type_map` の callable による再推論時に `schema_overrides` が意図せず伝播する問題を修正しました。
-- `NumberValidator.range()` で `min > max` の不正な境界を定義時に `ValueError` として拒否し、`.min()` / `.max()` の組み合わせでも矛盾を防ぐようにしました。
-- `Schema.generate_sample()` が生成候補を各バリデータで再検証するようになり、`regex()` や `custom()` を満たせない不正なサンプルを返さず `ValueError` を送出するようになりました。
+
+## [1.2.1] - 2026-03-07
+
+### Added
+- `v.auto_infer(data, type_map=None, schema_overrides=None)` を追加し、既存データから ValidKit スキーマを逆生成できるようになりました。
+- `type_map` によるカスタム型対応を追加しました。callable が `Validator` を返す場合はそのまま使い、プリミティブ値を返す場合は変換後の値で再推論できます。
+- `schema_overrides` により、トップレベルの dict フィールドを明示的なバリデータで上書きできるようになりました。
 
 ### Changed
-- `Schema(...)` は実行時に dict スキーマだけでなく class 記法スキーマも直接ラップできるようになりました。
-- README / `docs/index.md` / 回帰テストをクラス記法スキーマと Python 3.9+ 型ヒント対応に合わせて更新しました。
-- `v.auto_infer()` の型ヒントと回帰テストを拡充し、mypy 互換性を改善しました。
-- ドキュメントとサンプルを `auto_infer()` / `schema_overrides` の仕様に合わせて更新しました。
+- `v.auto_infer()` の型ヒントと回帰テストを拡充し、mypy / IDE で扱いやすい API に整理しました。
+- ドキュメントとサンプルを `auto_infer()`・`schema_overrides`・`generate_sample()` の現在仕様に合わせて更新しました。
+
+### Fixed
+- `schema_overrides` がネストした dict やリスト要素に漏れて適用される問題を修正しました。
+- `type_map` の callable による再推論時に `schema_overrides` が意図せず伝播する問題を修正しました。
+- `NumberValidator.range()` で `min > max` の不正な境界を定義時に `ValueError` として拒否し、`.min()` / `.max()` との組み合わせでも矛盾を防ぐようにしました。
+- `Schema.generate_sample()` が生成候補を各バリデータで再検証するようになり、`regex()` や `custom()` を満たせない不正なサンプルを返さず `ValueError` を送出するようになりました。
 
 ## [1.2.0] - 2026-02-27
-
-> 注: この版はリポジトリ内のバージョン定義とリリースコミットを基準に整理していますが、現時点では対応する `git tag` は確認できていません。
-
 ### Added
 - すべてのバリデータに `.default(value)` を追加しました。欠損キーを自動補完し、設定したフィールドは自動的に optional として扱われます。
 - すべてのバリデータに `.examples(list)` を追加しました。サンプル生成やドキュメント補助に使える例を保持できます。
