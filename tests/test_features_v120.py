@@ -211,6 +211,27 @@ class TestGenerateSample:
         sample2 = schema.generate_sample()
         assert sample1 == sample2
 
+    def test_number_range_uses_lower_bound_when_zero_is_out_of_range(self):
+        """int の range 制約がある場合、0 ではなく範囲内の代表値を返す"""
+        schema = Schema({"level": v.int().range(1, 100)})
+        sample = schema.generate_sample()
+        assert sample["level"] == 1
+        assert validate(sample, schema)["level"] == 1
+
+    def test_number_max_uses_upper_bound_when_zero_is_too_large(self):
+        """max 制約だけの負数レンジでも、制約内の値を返す"""
+        schema = Schema({"offset": v.int().max(-1)})
+        sample = schema.generate_sample()
+        assert sample["offset"] == -1
+        assert validate(sample, schema)["offset"] == -1
+
+    def test_float_range_uses_lower_bound_when_zero_is_out_of_range(self):
+        """float の range 制約でも代表値が制約内になる"""
+        schema = Schema({"ratio": v.float().range(0.5, 1.5)})
+        sample = schema.generate_sample()
+        assert sample["ratio"] == 0.5
+        assert validate(sample, schema)["ratio"] == 0.5
+
 
 # ============================================================
 # v.auto_infer() のテスト

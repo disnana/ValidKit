@@ -11,6 +11,7 @@ from typing import (
     Literal,
     cast,
 )
+import math
 from .v import Validator, v
 
 T = TypeVar("T")
@@ -50,7 +51,8 @@ class Schema(Generic[T]):
 
         1. `.default(value)` が設定されている場合 → そのデフォルト値
         2. `.examples([...])` が設定されている場合 → リストの最初の要素
-        3. どちらも設定されていない場合 → 型に応じたダミー値 (str: "example", int: 0 など)
+        3. どちらも設定されていない場合 → 型に応じたダミー値
+           (`range()` / `min()` / `max()` がある数値は制約内の代表値を優先)
 
         ネストされた辞書スキーマやリストスキーマも再帰的に処理されます。
 
@@ -217,6 +219,25 @@ _TYPE_DUMMY: Dict[Any, Any] = {
     bool: False,
 }
 
+
+def _generate_number_sample(schema: Any) -> Union[int, float]:
+    """NumberValidator の制約内に収まる代表値を返します。"""
+    zero: Union[int, float] = 0 if schema._type_cls is int else 0.0
+
+    if schema._type_cls is int:
+        lower = math.ceil(schema._min) if schema._min is not None else None
+        upper = math.floor(schema._max) if schema._max is not None else None
+    else:
+        lower = float(schema._min) if schema._min is not None else None
+        upper = float(schema._max) if schema._max is not None else None
+
+    if lower is not None and zero < lower:
+        return lower
+    if upper is not None and zero > upper:
+        return upper
+    return zero
+
+
 def _generate_sample(schema: Any) -> Any:
     """
     スキーマ定義を再帰的に走査し、サンプルデータを生成します。
@@ -244,7 +265,7 @@ def _generate_sample(schema: Any) -> Any:
         if isinstance(schema, StringValidator):
             return "example"
         if isinstance(schema, NumberValidator):
-            return 0 if schema._type_cls is int else 0.0
+            return _generate_number_sample(schema)
         if isinstance(schema, BoolValidator):
             return False
         if isinstance(schema, OneOfValidator):
