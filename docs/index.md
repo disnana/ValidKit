@@ -88,7 +88,6 @@ class Config:
 `v.instance(MyType)` を使うと、辞書スキーマでも同じ `isinstance` チェックを明示的に書けます。
 
 > **注意**: `Union[int, str]` や `int | str` のように、`None` 以外の複数型を持つ Union は現在サポートしていません。スキーマ変換時に `TypeError` を送出します。代わりに `Optional[T]`、単一型、または `v.instance(...)` を使用してください。
-
 ### スキーマ自動生成
 
 #### `v.auto_infer(data, type_map=None, schema_overrides=None)`

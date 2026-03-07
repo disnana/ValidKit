@@ -503,4 +503,4 @@ Issue の報告や Pull Request を歓迎します！詳細は [SECURITY.md](SEC
 ## ライセンス
 
 本プロジェクトは **MIT ライセンス**の下で公開されています。
-詳細は [LICENSE](LICENSE) ファイルをご覧ください。
+詳細は [LICENSE](LICENSE) ファイルをご覧ください.
