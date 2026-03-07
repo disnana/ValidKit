@@ -135,8 +135,8 @@ schema = v.auto_infer(
 
 型固有のメソッド：
 - `.regex(pattern)`: (str限定) 正規表現にマッチするか検証。
-- `.range(min, max)`: (int/float限定) 値が範囲内にあるか検証。
-- `.min(val)` / `.max(val)`: (int/float限定) 最小値または最大値を検証。
+- `.range(min, max)`: (int/float限定) 値が範囲内にあるか検証。`min <= max` が必須で、不正な境界は定義時に `ValueError` になります。
+- `.min(val)` / `.max(val)`: (int/float限定) 最小値または最大値を検証。既存の反対側境界と矛盾する値は設定できません。
 
 ---
 

@@ -108,7 +108,7 @@ except ValidationError as e:
 * `.examples(list)`: サンプル生成やドキュメント用の具体例を設定
 * `.description(str)`: フィールドの説明文を設定
 * `.regex(pattern)`: 正規表現チェック
-* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック
+* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック（`min <= max` が必須。不正な境界は定義時に `ValueError`）
 * `.custom(func)`: 独自の変換・検証ロジックを注入
 * `.coerce()`: 入力値の型を自動的に変換（例: "123" -> 123）
 

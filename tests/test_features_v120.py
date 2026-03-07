@@ -8,11 +8,8 @@ v1.2.0 新機能のテスト:
   - 後方互換性の保証
 """
 
-import sys
-import os
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from validkit import v, Schema, validate, ValidationError
 

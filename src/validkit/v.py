@@ -137,15 +137,21 @@ class NumberValidator(Validator):
         self._max: Optional[float] = None
 
     def range(self, min_val: float, max_val: float) -> "NumberValidator":
+        if min_val > max_val:
+            raise ValueError(f"Invalid range: minimum {min_val} cannot be greater than maximum {max_val}")
         self._min = min_val
         self._max = max_val
         return self
 
     def min(self, min_val: float) -> "NumberValidator":
+        if self._max is not None and min_val > self._max:
+            raise ValueError(f"Invalid range: minimum {min_val} cannot be greater than maximum {self._max}")
         self._min = min_val
         return self
 
     def max(self, max_val: float) -> "NumberValidator":
+        if self._min is not None and self._min > max_val:
+            raise ValueError(f"Invalid range: minimum {self._min} cannot be greater than maximum {max_val}")
         self._max = max_val
         return self
 

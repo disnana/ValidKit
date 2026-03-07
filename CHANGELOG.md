@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `NumberValidator.range()` は `min > max` の不正な境界を定義時に `ValueError` で拒否するようになりました。あわせて `.min()` / `.max()` のチェーンでも矛盾する境界設定を防ぎます。
+
 ### Added
 
 #### `v.auto_infer(data, type_map=None, schema_overrides=None)` — スキーマ逆生成

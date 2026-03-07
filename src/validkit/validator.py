@@ -223,6 +223,8 @@ _TYPE_DUMMY: Dict[Any, Any] = {
 def _generate_number_sample(schema: Any) -> Union[int, float]:
     """NumberValidator の制約内に収まる代表値を返します。"""
     zero: Union[int, float] = 0 if schema._type_cls is int else 0.0
+    lower: Optional[Union[int, float]]
+    upper: Optional[Union[int, float]]
 
     if schema._type_cls is int:
         lower = math.ceil(schema._min) if schema._min is not None else None
