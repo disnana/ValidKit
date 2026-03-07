@@ -8,11 +8,8 @@ v1.2.0 新機能のテスト:
   - 後方互換性の保証
 """
 
-import sys
-import os
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from validkit import v, Schema, validate, ValidationError
 
@@ -210,3 +207,472 @@ class TestGenerateSample:
         sample1 = schema.generate_sample()
         sample2 = schema.generate_sample()
         assert sample1 == sample2
+
+    def test_number_range_uses_lower_bound_when_zero_is_out_of_range(self):
+        """int の range 制約がある場合、0 ではなく範囲内の代表値を返す"""
+        schema = Schema({"level": v.int().range(1, 100)})
+        sample = schema.generate_sample()
+        assert sample["level"] == 1
+        assert validate(sample, schema)["level"] == 1
+
+    def test_number_max_uses_upper_bound_when_zero_is_too_large(self):
+        """max 制約だけの負数レンジでも、制約内の値を返す"""
+        schema = Schema({"offset": v.int().max(-1)})
+        sample = schema.generate_sample()
+        assert sample["offset"] == -1
+        assert validate(sample, schema)["offset"] == -1
+
+    def test_float_range_uses_lower_bound_when_zero_is_out_of_range(self):
+        """float の range 制約でも代表値が制約内になる"""
+        schema = Schema({"ratio": v.float().range(0.5, 1.5)})
+        sample = schema.generate_sample()
+        assert sample["ratio"] == 0.5
+        assert validate(sample, schema)["ratio"] == 0.5
+
+    def test_generate_sample_uses_example_that_matches_regex(self):
+        """regex 制約つきでも examples の先頭が妥当ならその値を返す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$").examples(["123-4567"])})
+        sample = schema.generate_sample()
+        assert sample["postal_code"] == "123-4567"
+        assert validate(sample, schema)["postal_code"] == "123-4567"
+
+    def test_generate_sample_applies_custom_transformations(self):
+        """custom が変換を返す場合、generate_sample も変換後の値を返す"""
+        schema = Schema({
+            "code": v.str().custom(lambda value: value.strip()).custom(lambda value: value.upper())
+        })
+        sample = schema.generate_sample()
+        assert sample["code"] == "EXAMPLE"
+        assert validate(sample, schema)["code"] == "EXAMPLE"
+
+    def test_generate_sample_raises_when_regex_cannot_be_satisfied(self):
+        """default/examples がなく regex を満たす候補を作れない場合は ValueError を出す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$")})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
+    def test_generate_sample_raises_when_default_violates_constraints(self):
+        """default が制約違反なら不正なサンプルを返さず ValueError を出す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$").default("example")})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
+    def test_generate_sample_raises_when_custom_rejects_dummy_value(self):
+        """custom が型ダミー値を拒否する場合は ValueError を出す"""
+        schema = Schema({"code": v.str().custom(lambda value: value if value.startswith("ID-") else (_ for _ in ()).throw(ValueError("invalid code")))})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
+
+# ============================================================
+# v.auto_infer() のテスト
+# ============================================================
+
+class TestAutoInfer:
+    def test_primitive_str(self):
+        """str 値から StringValidator が生成される"""
+        from validkit.v import StringValidator
+        schema = v.auto_infer("hello")
+        assert isinstance(schema, StringValidator)
+
+    def test_primitive_int(self):
+        """int 値から NumberValidator(int) が生成される"""
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(42)
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is int
+
+    def test_primitive_float(self):
+        """float 値から NumberValidator(float) が生成される"""
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(3.14)
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is float
+
+    def test_primitive_bool(self):
+        """bool 値から BoolValidator が生成される (int の前に評価される)"""
+        from validkit.v import BoolValidator
+        schema = v.auto_infer(True)
+        assert isinstance(schema, BoolValidator)
+
+    def test_bool_not_confused_with_int(self):
+        """bool は int のサブクラスだが、NumberValidator ではなく BoolValidator が返る"""
+        from validkit.v import BoolValidator, NumberValidator
+        schema_true = v.auto_infer(True)
+        schema_false = v.auto_infer(False)
+        assert isinstance(schema_true, BoolValidator)
+        assert isinstance(schema_false, BoolValidator)
+        # False (== 0) が int と誤認されないことを確認
+        assert not isinstance(schema_false, NumberValidator)
+
+    def test_list_with_str_elements(self):
+        """str 要素のリストから v.list(v.str()) が生成される"""
+        from validkit.v import ListValidator, StringValidator
+        schema = v.auto_infer(["a", "b", "c"])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_list_with_int_elements(self):
+        """int 要素のリストから v.list(v.int()) が生成される"""
+        from validkit.v import ListValidator, NumberValidator
+        schema = v.auto_infer([1, 2, 3])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, NumberValidator)
+        assert schema._item_validator._type_cls is int
+
+    def test_empty_list_defaults_to_str(self):
+        """空リストは v.list(v.str()) にデフォルトされる"""
+        from validkit.v import ListValidator, StringValidator
+        schema = v.auto_infer([])
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_flat_dict(self):
+        """フラットな dict から対応するバリデータを持つ dict スキーマが生成される"""
+        from validkit.v import StringValidator, NumberValidator, BoolValidator
+        data = {"name": "Alice", "age": 30, "active": True}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["age"], NumberValidator)
+        assert schema["age"]._type_cls is int
+        assert isinstance(schema["active"], BoolValidator)
+
+    def test_nested_dict(self):
+        """ネストした dict は再帰的にスキーマ化される"""
+        from validkit.v import StringValidator, NumberValidator
+        data = {"user": {"id": 1, "name": "Bob"}}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["user"], dict)
+        assert isinstance(schema["user"]["id"], NumberValidator)
+        assert isinstance(schema["user"]["name"], StringValidator)
+
+    def test_dict_with_list_value(self):
+        """dict 内の list フィールドも正しく推論される"""
+        from validkit.v import ListValidator, StringValidator
+        data = {"tags": ["python", "java"]}
+        schema = v.auto_infer(data)
+        assert isinstance(schema, dict)
+        assert isinstance(schema["tags"], ListValidator)
+        assert isinstance(schema["tags"]._item_validator, StringValidator)
+
+    def test_inferred_schema_can_validate_original_data(self):
+        """auto_infer で生成したスキーマで元データをバリデーションできる"""
+        data = {"name": "Alice", "age": 30, "score": 9.5, "active": True}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result["age"] == 30
+        assert result["score"] == 9.5
+        assert result["active"] is True
+
+    def test_inferred_nested_schema_can_validate_original_data(self):
+        """ネスト付き auto_infer スキーマで元データをバリデーションできる"""
+        data = {"user": {"id": 1, "tags": ["admin", "editor"]}}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["user"]["id"] == 1
+        assert result["user"]["tags"] == ["admin", "editor"]
+
+    def test_none_returns_optional_validator(self):
+        """None 値から optional な基底 Validator が生成される"""
+        from validkit.v import Validator
+        schema = v.auto_infer(None)
+        assert isinstance(schema, Validator)
+        assert schema._optional is True
+
+    def test_dict_with_none_field_is_optional(self):
+        """dict 内の None フィールドは optional なバリデータになる"""
+        from validkit.v import Validator
+        data = {"name": "Alice", "nickname": None}
+        schema = v.auto_infer(data)
+        assert isinstance(schema["nickname"], Validator)
+        assert schema["nickname"]._optional is True
+
+    def test_dict_with_none_field_validates_with_none(self):
+        """auto_infer した None フィールドは None 値でバリデーションが通る"""
+        data = {"name": "Alice", "nickname": None}
+        schema = v.auto_infer(data)
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result.get("nickname") is None
+
+    def test_unsupported_type_raises_type_error(self):
+        """サポートされていない型 (カスタムクラスなど) は TypeError を送出する"""
+        import datetime
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(datetime.datetime.now())
+
+    def test_dict_with_unsupported_type_raises_type_error(self):
+        """dict 内にサポートされていない型が含まれると TypeError を送出する"""
+        import datetime
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(data)
+
+    def test_type_map_with_validator_instance(self):
+        """type_map にバリデータインスタンスを渡すとカスタム型を処理できる"""
+        import datetime
+        from validkit.v import StringValidator
+        schema = v.auto_infer(
+            datetime.datetime(2024, 1, 1),
+            type_map={datetime.datetime: v.str()},
+        )
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_with_callable(self):
+        """type_map に呼び出し可能オブジェクトを渡すと値を受けて Validator を返せる"""
+        import datetime
+        from validkit.v import StringValidator
+        dt = datetime.datetime(2024, 6, 15, 12, 0, 0)
+        schema = v.auto_infer(
+            dt,
+            type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+        )
+        assert isinstance(schema, StringValidator)
+        assert schema._description == str(dt)
+
+    def test_type_map_in_dict_field(self):
+        """dict 内のカスタム型フィールドも type_map で処理される"""
+        import datetime
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(data, type_map={datetime.date: v.str()})
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_type_map_in_list_element(self):
+        """list 内のカスタム型も type_map で処理される"""
+        import datetime
+        from validkit.v import ListValidator, StringValidator
+        data = [datetime.date(2024, 1, 1), datetime.date(2024, 2, 1)]
+        schema = v.auto_infer(data, type_map={datetime.date: v.str()})
+        assert isinstance(schema, ListValidator)
+        assert isinstance(schema._item_validator, StringValidator)
+
+    def test_type_map_with_custom_class(self):
+        """ユーザー定義のカスタムクラスも type_map で処理できる"""
+        from validkit.v import StringValidator
+
+        class MyModel:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+        schema = v.auto_infer(MyModel("test"), type_map={MyModel: v.str()})
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_without_match_still_raises_type_error(self):
+        """type_map に対象型がなければ依然として TypeError が送出される"""
+        import datetime
+
+        class Unrelated:
+            pass
+
+        with pytest.raises(TypeError, match="auto_infer: unsupported type"):
+            v.auto_infer(
+                Unrelated(),
+                type_map={datetime.date: v.str()},  # Unrelated は含まれない
+            )
+
+    # ---- type_map 自動変換 (callable がプリミティブを返す) ---
+
+    def test_type_map_callable_returning_str_re_infers(self):
+        """type_map の callable が str を返す場合 → StringValidator として再推論される"""
+        import datetime
+        from validkit.v import StringValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 1, 1),
+            type_map={datetime.date: lambda val: val.isoformat()},
+        )
+        assert isinstance(schema, StringValidator)
+
+    def test_type_map_callable_returning_int_re_infers(self):
+        """type_map の callable が int を返す場合 → NumberValidator(int) として再推論される"""
+        import datetime
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 1, 1),
+            type_map={datetime.date: lambda val: val.toordinal()},
+        )
+        assert isinstance(schema, NumberValidator)
+        assert schema._type_cls is int
+
+    def test_type_map_callable_returning_dict_re_infers(self):
+        """type_map の callable が dict を返す場合 → ネスト dict スキーマとして再推論される"""
+        import datetime
+        from validkit.v import NumberValidator
+        schema = v.auto_infer(
+            datetime.date(2024, 6, 15),
+            type_map={
+                datetime.date: lambda val: {"year": val.year, "month": val.month, "day": val.day}
+            },
+        )
+        assert isinstance(schema, dict)
+        assert isinstance(schema["year"], NumberValidator)
+        assert isinstance(schema["month"], NumberValidator)
+        assert isinstance(schema["day"], NumberValidator)
+
+    def test_type_map_callable_returning_validator_used_directly(self):
+        """type_map の callable が Validator を返す場合はそのまま使用される (再推論なし)"""
+        import datetime
+        from validkit.v import StringValidator
+        dt = datetime.datetime(2024, 6, 15, 12, 0, 0)
+        schema = v.auto_infer(
+            dt,
+            type_map={datetime.datetime: lambda val: v.str().description(str(val))},
+        )
+        assert isinstance(schema, StringValidator)
+        assert schema._description == str(dt)
+
+    def test_type_map_auto_convert_in_dict_field(self):
+        """dict フィールドの auto-convert callable も正しく re-infer される"""
+        import datetime
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(
+            data,
+            type_map={datetime.date: lambda val: val.isoformat()},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    # ---- schema_overrides -----------------------------------------------
+
+    def test_schema_overrides_replaces_inferred_field(self):
+        """schema_overrides で指定したフィールドは推論をスキップして指定バリデータを使う"""
+        from validkit.v import NumberValidator
+        data = {"name": "Alice", "score": 9.5}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"score": v.float().range(0.0, 10.0)},
+        )
+        assert isinstance(schema["score"], NumberValidator)
+        assert schema["score"]._min == 0.0
+        assert schema["score"]._max == 10.0
+
+    def test_schema_overrides_optional_field(self):
+        """schema_overrides で .optional() を付けると optional フィールドになる"""
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "bio": "some text"}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"bio": v.str().optional()},
+        )
+        assert isinstance(schema["bio"], StringValidator)
+        assert schema["bio"]._optional is True
+
+    def test_schema_overrides_handles_unsupported_type_field(self):
+        """schema_overrides があれば推論できない型のフィールドもエラーにならない"""
+        import datetime
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"created_at": v.str()},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_schema_overrides_does_not_affect_non_dict_data(self):
+        """schema_overrides は dict 以外のデータに渡しても影響しない (str を推論する)"""
+        from validkit.v import StringValidator
+        schema = v.auto_infer("hello", schema_overrides={"hello": v.int()})
+        assert isinstance(schema, StringValidator)
+
+    def test_schema_overrides_unmentioned_fields_still_inferred(self):
+        """schema_overrides に含まれないフィールドは通常どおり推論される"""
+        from validkit.v import NumberValidator
+        data = {"name": "Alice", "age": 30}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("表示名")},
+        )
+        assert schema["name"]._description == "表示名"
+        assert isinstance(schema["age"], NumberValidator)
+
+    def test_schema_overrides_combined_with_type_map(self):
+        """schema_overrides と type_map を同時に使うと両方有効になる"""
+        import datetime
+        from validkit.v import StringValidator, NumberValidator
+        data = {
+            "name": "Alice",
+            "score": 9.5,
+            "created_at": datetime.date(2024, 1, 1),
+        }
+        schema = v.auto_infer(
+            data,
+            type_map={datetime.date: v.str()},
+            schema_overrides={"score": v.float().range(0.0, 10.0)},
+        )
+        assert isinstance(schema["name"], StringValidator)
+        assert isinstance(schema["score"], NumberValidator)
+        assert schema["score"]._min == 0.0
+        assert isinstance(schema["created_at"], StringValidator)
+
+    def test_schema_overrides_round_trip_validation(self):
+        """schema_overrides を含むスキーマで元データをバリデーションできる"""
+        data = {"name": "Alice", "score": 8.5, "bio": "developer"}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={
+                "score": v.float().range(0.0, 10.0),
+                "bio": v.str().optional(),
+            },
+        )
+        result = validate(data, schema)
+        assert result["name"] == "Alice"
+        assert result["score"] == 8.5
+        assert result["bio"] == "developer"
+
+    def test_schema_overrides_does_not_leak_into_nested_dict(self):
+        """schema_overrides はトップレベルの dict にのみ適用され、ネストした dict には適用されない"""
+        from validkit.v import StringValidator
+        data = {"name": "Alice", "user": {"name": "Bob", "age": 25}}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("top-level override")},
+        )
+        # Top-level override is applied
+        assert schema["name"]._description == "top-level override"
+        # Nested dict is NOT affected by the override
+        assert isinstance(schema["user"]["name"], StringValidator)
+        assert schema["user"]["name"]._description is None
+
+    def test_schema_overrides_does_not_leak_into_list_items(self):
+        """schema_overrides はリスト内の dict 要素には適用されない"""
+        from validkit.v import StringValidator, ListValidator
+        data = {"items": [{"name": "foo", "val": 1}]}
+        schema = v.auto_infer(
+            data,
+            schema_overrides={"name": v.str().description("top-level override")},
+        )
+        assert isinstance(schema["items"], ListValidator)
+        item_validator = schema["items"]._item_validator
+        assert isinstance(item_validator["name"], StringValidator)
+        # List item's name field should NOT carry the top-level override
+        assert item_validator["name"]._description is None
+
+    def test_type_map_callable_returning_dict_does_not_apply_schema_overrides(self):
+        """type_map の callable が dict を返して再推論するとき、schema_overrides は適用されない"""
+        from validkit.v import NumberValidator
+
+        class SpecialDate:
+            def __init__(self, y, m, d):
+                self.y, self.m, self.d = y, m, d
+
+        # Top-level value is the custom type; callable returns a dict.
+        # schema_overrides has "year" which MUST NOT bleed into the re-inferred dict.
+        schema = v.auto_infer(
+            SpecialDate(2024, 1, 15),
+            type_map={
+                SpecialDate: lambda val: {"year": val.y, "month": val.m, "day": val.d},
+            },
+            schema_overrides={"year": v.str().description("should-not-apply")},
+        )
+        assert isinstance(schema, dict), "converted dict should produce a nested dict schema"
+        # "year" must be inferred from the int value, NOT overridden by schema_overrides
+        assert isinstance(schema["year"], NumberValidator), (
+            "year inside the converted dict must be NumberValidator, not the schema_overrides value"
+        )
+        assert schema["year"]._description is None

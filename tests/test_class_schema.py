@@ -508,15 +508,54 @@ class TestClassSchemaOptions:
         assert len(result.errors) == 2
 
     def test_class_schema_with_schema_wrapper(self):
-        """Schema() ラッパーはクラス記法スキーマを直接受け取れる（dict変換後に渡す）"""
+        """Schema() ラッパーはクラス記法スキーマを実行時にそのままラップして使える"""
         class Profile:
             name: str
             age: int
 
-        from validkit.validator import _class_to_schema
-        schema = Schema(_class_to_schema(Profile))
+        schema = Schema(Profile)
         result = validate({"name": "Alice", "age": 30}, schema)
         assert result == {"name": "Alice", "age": 30}
+
+    def test_schema_wrapper_can_wrap_class_schema_directly_at_runtime(self):
+        """Schema() は実行時にはクラス記法スキーマもそのままラップして検証できる"""
+        class Profile:
+            name: str
+            age: int
+
+        schema = Schema(Profile)
+        result = validate({"name": "Alice", "age": 30}, schema)
+        assert result == {"name": "Alice", "age": 30}
+
+
+class TestBasicTypeConstantConsistency:
+    def test_validate_internal_does_not_duplicate_basic_type_tuple(self):
+        """validate_internal() は基本型判定に _BASIC_TYPES を使い、型タプルを重複定義しない"""
+        import ast
+        import pathlib
+        import validkit.validator as vmod
+
+        source = pathlib.Path(vmod.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        duplicated_tuple_nodes = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name != "validate_internal":
+                continue
+            for child in ast.walk(node):
+                if not isinstance(child, ast.Tuple):
+                    continue
+                values = []
+                for elt in child.elts:
+                    if isinstance(elt, ast.Name):
+                        values.append(elt.id)
+                if values == ["str", "int", "float", "bool"]:
+                    duplicated_tuple_nodes.append(ast.unparse(child))
+
+        assert not duplicated_tuple_nodes, (
+            "validate_internal() duplicates the basic type tuple instead of reusing "
+            f"_BASIC_TYPES: {duplicated_tuple_nodes}"
+        )
 
 
 # ---------------------------------------------------------------------------

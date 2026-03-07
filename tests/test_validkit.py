@@ -1,10 +1,6 @@
-import pytest
-import sys
-import os
 from typing import TypedDict
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+import pytest
 
 from validkit import v, validate, ValidationError, Schema, ValidationResult
 
@@ -12,7 +8,7 @@ def test_basic_types():
     assert validate("hello", v.str()) == "hello"
     assert validate(123, v.int()) == 123
     assert validate(1.23, v.float()) == 1.23
-    assert validate(True, v.bool()) == True
+    assert validate(True, v.bool()) is True
     
     with pytest.raises(ValidationError):
         validate(123, v.str())
@@ -32,6 +28,31 @@ def test_number_range():
         validate(9, validator)
     with pytest.raises(ValidationError):
         validate(21, validator)
+
+def test_number_range_allows_equal_bounds():
+    validator = v.int().range(10, 10)
+    assert validate(10, validator) == 10
+    with pytest.raises(ValidationError):
+        validate(9, validator)
+
+
+def test_number_range_rejects_inverted_bounds():
+    with pytest.raises(ValueError, match=r"minimum 111 cannot be greater than maximum 100"):
+        v.int().range(111, 100)
+
+
+def test_number_min_max_rejects_inverted_bounds_in_any_order():
+    with pytest.raises(ValueError, match=r"minimum 111 cannot be greater than maximum 100"):
+        v.int().min(111).max(100)
+
+    with pytest.raises(ValueError, match=r"minimum 111 cannot be greater than maximum 100"):
+        v.int().max(100).min(111)
+
+
+def test_float_range_rejects_inverted_bounds():
+    with pytest.raises(ValueError, match=r"minimum 1.5 cannot be greater than maximum 1.0"):
+        v.float().range(1.5, 1.0)
+
 
 def test_list_validation():
     validator = v.list(v.int())

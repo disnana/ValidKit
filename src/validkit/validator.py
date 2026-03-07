@@ -14,6 +14,7 @@ from typing import (
     cast,
 )
 import types as _types
+import math
 from .v import (
     Validator,
     v,
@@ -23,7 +24,6 @@ from .v import (
     BoolValidator,
     ListValidator,
     DictValidator,
-    OneOfValidator,
 )
 
 T = TypeVar("T")
@@ -95,7 +95,7 @@ class Schema(Generic[T]):
     より豊かなスキーマ定義が可能になります。
     """
 
-    def __init__(self, schema: Dict[str, Any]) -> None:
+    def __init__(self, schema: Any) -> None:
         self._schema = schema
 
     def generate_sample(self) -> Dict[str, Any]:
@@ -106,7 +106,8 @@ class Schema(Generic[T]):
 
         1. `.default(value)` が設定されている場合 → そのデフォルト値
         2. `.examples([...])` が設定されている場合 → リストの最初の要素
-        3. どちらも設定されていない場合 → 型に応じたダミー値 (str: "example", int: 0 など)
+        3. どちらも設定されていない場合 → 型に応じたダミー値
+           (`range()` / `min()` / `max()` がある数値は制約内の代表値を優先)
 
         ネストされた辞書スキーマやリストスキーマも再帰的に処理されます。
 
@@ -311,7 +312,7 @@ def validate_internal(
     errors: Optional[List[ErrorDetail]] = None
 ) -> Any:
     # 1. Shorthand types
-    if isinstance(schema, type) and schema in (str, int, float, bool):
+    if isinstance(schema, type) and schema in _BASIC_TYPES:
         if schema is str:
             schema = v.str()
         elif schema is int:
@@ -430,6 +431,80 @@ _TYPE_DUMMY: Dict[Any, Any] = {
     bool: False,
 }
 
+
+def _generate_number_sample(schema: Any) -> Union[int, float]:
+    """NumberValidator の制約内に収まる代表値を返します。"""
+    zero: Union[int, float] = 0 if schema._type_cls is int else 0.0
+    lower: Optional[Union[int, float]]
+    upper: Optional[Union[int, float]]
+
+    if schema._type_cls is int:
+        lower = math.ceil(schema._min) if schema._min is not None else None
+        upper = math.floor(schema._max) if schema._max is not None else None
+    else:
+        lower = float(schema._min) if schema._min is not None else None
+        upper = float(schema._max) if schema._max is not None else None
+
+    if lower is not None and zero < lower:
+        return lower
+    if upper is not None and zero > upper:
+        return upper
+    return zero
+
+
+def _validate_generated_value(schema: Validator, candidate: Any) -> Any:
+    """生成した候補値を Validator 自身で再検証し、必要なら変換後の値を返します。"""
+    try:
+        return schema.validate(candidate, data={})
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "generate_sample() could not produce a valid sample for this validator. "
+            "Provide a .default(...) or .examples([...]) value that satisfies all constraints."
+        ) from exc
+
+
+def _generate_validator_sample(schema: Validator) -> Any:
+    """Validator 1件分の候補値を生成し、制約を満たすことを保証します。"""
+    if isinstance(schema, InstanceValidator):
+        if schema._has_default:
+            return _validate_generated_value(schema, schema._default_value)
+        if schema._examples:
+            return _validate_generated_value(schema, schema._examples[0])
+        # 任意クラスの妥当なダミー値は一般に構成できないため、従来どおり None を返す。
+        return None
+
+    if schema._has_default:
+        return _validate_generated_value(schema, schema._default_value)
+    if schema._examples:
+        return _validate_generated_value(schema, schema._examples[0])
+
+    from .v import (
+        StringValidator,
+        NumberValidator,
+        BoolValidator,
+        ListValidator,
+        DictValidator,
+        OneOfValidator,
+    )
+
+    if isinstance(schema, StringValidator):
+        candidate: Any = "example"
+    elif isinstance(schema, NumberValidator):
+        candidate = _generate_number_sample(schema)
+    elif isinstance(schema, BoolValidator):
+        candidate = False
+    elif isinstance(schema, OneOfValidator):
+        candidate = schema._choices[0] if schema._choices else None
+    elif isinstance(schema, ListValidator):
+        candidate = [_generate_sample(schema._item_validator)]
+    elif isinstance(schema, DictValidator):
+        candidate = {"key": _generate_sample(schema._value_validator)}
+    else:
+        candidate = None
+
+    return _validate_generated_value(schema, candidate)
+
+
 def _generate_sample(schema: Any) -> Any:
     """
     スキーマ定義を再帰的に走査し、サンプルデータを生成します。
@@ -451,29 +526,7 @@ def _generate_sample(schema: Any) -> Any:
 
     # 2. Validator オブジェクト
     if isinstance(schema, Validator):
-        # 優先順位: default > examples の先頭 > 型ダミー
-        if schema._has_default:
-            return schema._default_value
-        if schema._examples:
-            return schema._examples[0]
-        # 型ダミーを型名から推定
-        if isinstance(schema, StringValidator):
-            return "example"
-        if isinstance(schema, NumberValidator):
-            return 0 if schema._type_cls is int else 0.0
-        if isinstance(schema, BoolValidator):
-            return False
-        if isinstance(schema, OneOfValidator):
-            return schema._choices[0] if schema._choices else None
-        if isinstance(schema, ListValidator):
-            inner = _generate_sample(schema._item_validator)
-            return [inner]
-        if isinstance(schema, DictValidator):
-            inner = _generate_sample(schema._value_validator)
-            return {"key": inner}
-        if isinstance(schema, InstanceValidator):
-            return None
-        return None
+        return _generate_validator_sample(schema)
 
     # 3. dict スキーマ → 再帰的に走査
     if isinstance(schema, dict):

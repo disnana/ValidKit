@@ -1,11 +1,7 @@
 import pytest
-import sys
-import os
-
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
 from validkit import v, validate, ValidationError
+
 
 def test_string_coercion():
     schema = {"val": v.str().coerce()}

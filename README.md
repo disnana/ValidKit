@@ -111,7 +111,7 @@ except ValidationError as e:
 * `.examples(list)`: サンプル生成やドキュメント用の具体例を設定
 * `.description(str)`: フィールドの説明文を設定
 * `.regex(pattern)`: 正規表現チェック
-* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック
+* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲チェック（`min <= max` が必須。不正な境界は定義時に `ValueError`）
 * `.custom(func)`: 独自の変換・検証ロジックを注入
 * `.coerce()`: 入力値の型を自動的に変換（例: "123" -> 123）
 
@@ -292,7 +292,7 @@ result = validate({}, SCHEMA)
 
 ### サンプルデータの自動生成 (`generate_sample`)
 
-定義したスキーマから、仕様書の雛形や設定ファイルのテンプレートとして使えるサンプルデータを自動生成できます。
+定義したスキーマから、仕様書の雛形や設定ファイルのテンプレートとして使えるサンプルデータを自動生成できます。生成された値は各バリデータで再検証されるため、`regex()` や `custom()` を満たせない不正なサンプルは返しません。
 
 ```python
 SCHEMA = Schema({
@@ -310,6 +310,33 @@ sample = SCHEMA.generate_sample()
 1. `.default()` で設定された値
 2. `.examples()` リストの最初の要素
 3. 各型のダミー値（`str`: "example", `int`: 0, `bool`: False 等）
+
+`regex()` / `custom()` などで上記候補が制約を満たせない場合、`generate_sample()` は `ValueError` を送出します。その場合は妥当な `.default(...)` または `.examples([...])` を与えてください。
+
+### スキーマ自動生成 (`v.auto_infer`)
+
+既存データから ValidKit スキーマを逆生成できます。プロトタイピングや既存 JSON / dict からの移行時に便利です。
+
+```python
+import datetime
+from validkit import v
+
+data = {
+    "name": "Alice",
+    "score": 9.5,
+    "created_at": datetime.date(2024, 1, 1),
+}
+
+schema = v.auto_infer(
+    data,
+    type_map={datetime.date: v.str()},
+    schema_overrides={"score": v.float().range(0.0, 10.0)},
+)
+```
+
+- `type_map` でカスタム型を処理できます
+- `schema_overrides` でトップレベル dict の特定フィールドだけ推論結果を上書きできます
+- `None` は `optional()` なバリデータとして推論されます
 
 ### 部分更新とデフォルト値のマージ (base引数)
 
