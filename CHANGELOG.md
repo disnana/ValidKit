@@ -8,7 +8,19 @@
 
 ## Unreleased
 
-- 現在、未整理の変更はありません。
+### Added
+- クラス記法スキーマ (`class Config: ...`) を追加し、型アノテーションと `Validator` クラス属性を既存の dict スキーマ検証経路へ変換できるようになりました。
+- `v.instance(type_cls)` / `InstanceValidator` を追加し、任意クラスに対する `isinstance` ベースの検証と `.coerce()` をサポートしました。
+
+### Changed
+- `Schema(...)` は実行時に dict スキーマだけでなく class 記法スキーマも直接ラップできるようになりました。
+- README / `docs/index.md` / 回帰テストをクラス記法スキーマと Python 3.9+ 型ヒント対応に合わせて更新しました。
+
+### Fixed
+- クラス記法スキーマで `Optional[T]` / `Union[T, None]` が必須扱いになっていた問題を修正しました。
+- `typing.Union` / PEP 604 (`T | None`) のうち、`None` 以外の複数メンバーを持つ型がサイレントにパススルーされる問題を修正し、明示的に `TypeError` を送出するようにしました。
+- Python 3.9 で `types.UnionType` や `_UnionType: type | None` に起因する import / 実行時エラーが発生しないよう互換性を改善しました。
+- `InstanceValidator.coerce()` が元例外を失っていた問題を修正し、例外チェーンを保持するようにしました。
 
 ## [1.2.1] - 2026-03-07
 
@@ -28,7 +40,6 @@
 - `Schema.generate_sample()` が生成候補を各バリデータで再検証するようになり、`regex()` や `custom()` を満たせない不正なサンプルを返さず `ValueError` を送出するようになりました。
 
 ## [1.2.0] - 2026-02-27
-
 ### Added
 - すべてのバリデータに `.default(value)` を追加しました。欠損キーを自動補完し、設定したフィールドは自動的に optional として扱われます。
 - すべてのバリデータに `.examples(list)` を追加しました。サンプル生成やドキュメント補助に使える例を保持できます。

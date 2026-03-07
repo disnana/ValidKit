@@ -8,7 +8,7 @@ def test_basic_types():
     assert validate("hello", v.str()) == "hello"
     assert validate(123, v.int()) == 123
     assert validate(1.23, v.float()) == 1.23
-    assert validate(True, v.bool()) == True
+    assert validate(True, v.bool()) is True
     
     with pytest.raises(ValidationError):
         validate(123, v.str())

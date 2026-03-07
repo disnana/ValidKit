@@ -31,6 +31,11 @@ ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キー
 * [クイックスタート](#クイックスタート)
 * [API 例](#api-例)
 * [高度な使い方](#高度な使い方)
+  * [クラス記法によるスキーマ定義](#クラス記法によるスキーマ定義)
+  * [IDE 補完を効かせる（TypedDict + Schema）](#ide-補完を効かせるtypeddict--schema)
+  * [スキーマを既存データから逆生成する（v.auto_infer）](#auto-infer)
+  * [部分更新とデフォルト値のマージ](#部分更新とデフォルト値のマージ)
+  * [マイグレーション](#マイグレーション)
 * [品質管理・セキュリティ](#品質管理セキュリティ)
 * [変更履歴](#変更履歴)
 * [貢献ガイドライン](#貢献ガイドライン)
@@ -102,6 +107,7 @@ except ValidationError as e:
 ## 特徴
 
 * 📝 **直感的なチェインメソッド** — `v.int().range(1, 10).optional()` のように流れるように記述。
+* 🏷️ **クラス記法対応** — Python クラスの型アノテーションをそのままスキーマとして使えます。`Optional[T]`・`List[T]`・`Dict[K,V]`・カスタム型にも対応。
 * 🌏 **日本語キー対応** — 日本語のキー名をそのまま扱えるため、仕様書に近いコードが書けます。
 * 🧠 **型補完に強い** — `Schema[T]` と TypedDict を組み合わせると、IDE / 型チェッカーが戻り値の形を推論できます。
 * 🔄 **強力な変換・マイグレーション** — 旧形式から新形式へのキー名変換や、値の動的変換を検証時に同時に行えます。
@@ -120,6 +126,7 @@ except ValidationError as e:
 * `v.bool()`: 真偽値
 * `v.list(schema)`: リスト（要素のスキーマを指定）
 * `v.dict(key_type, value_schema)`: 辞書
+* `v.instance(type_cls)`: 任意のクラスの isinstance チェック
 
 ### 修飾メソッド
 * `.optional()`: 必須でないフィールドにする
@@ -134,6 +141,122 @@ except ValidationError as e:
 ---
 
 ## 高度な使い方
+
+### クラス記法によるスキーマ定義
+
+辞書スキーマに加えて、Python のクラス型アノテーションをそのままスキーマとして使えます。
+
+#### 基本的なアノテーション
+
+```python
+from validkit import v, validate
+
+class UserProfile:
+    name: str
+    age: int
+    score: float
+    active: bool
+
+data = {"name": "Alice", "age": 30, "score": 9.5, "active": True}
+result = validate(data, UserProfile)
+# -> {"name": "Alice", "age": 30, "score": 9.5, "active": True}
+```
+
+#### `Optional` / `List` / `Dict` など typing モジュールの型
+
+```python
+from typing import Dict, List, Optional
+from validkit import validate
+
+class ServerConfig:
+    host: str
+    port: int
+    tags: Optional[List[str]]   # 省略可能なリスト
+    metadata: Dict[str, int]    # 辞書
+
+# tags は省略してもエラーにならない
+result = validate(
+    {"host": "db.local", "port": 5432, "metadata": {"connections": 10}},
+    ServerConfig,
+)
+# -> {"host": "db.local", "port": 5432, "metadata": {"connections": 10}}
+```
+
+Python 3.9 以降では `list[T]` / `dict[K, V]` の組み込みジェネリクス記法も使えます。
+
+```python
+class Report:
+    scores: list[int]
+    labels: dict[str, str]
+```
+
+#### カスタム型 (オリジナルクラス)
+
+任意のクラスをアノテーションに使うと、`isinstance` チェックが自動的に行われます。
+
+```python
+from validkit import validate
+
+class Timezone:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+UTC = Timezone("UTC")
+
+class Config:
+    name: str
+    age: int
+    timezone: Timezone          # カスタム型 → isinstance チェック
+
+result = validate({"name": "server1", "age": 5, "timezone": UTC}, Config)
+```
+
+`v.instance()` を使うと辞書スキーマ内でも同じチェックができます。
+
+```python
+from validkit import v, validate
+
+schema = {
+    "name": v.str(),
+    "timezone": v.instance(Timezone).default(UTC),
+}
+result = validate({"name": "server1"}, schema)
+# timezone は省略時に UTC が補完される
+```
+
+#### クラス属性によるデフォルト値と Validator の組み合わせ
+
+クラス属性に具体的な値を設定するとデフォルト値として機能します。
+Validator インスタンスを直接クラス属性にすることで、詳細な制約も記述できます。
+
+```python
+from typing import Optional
+from validkit import v, validate
+
+class Config:
+    host: str                                    # 必須
+    port: int = 5432                             # デフォルト値 5432
+    ssl: bool = False                            # デフォルト値 False
+    timeout: Optional[int] = 30                  # オプション + デフォルト
+    role = v.str().default("worker")             # Validator で詳細に定義
+
+result = validate({"host": "db.local"}, Config)
+# -> {"host": "db.local", "port": 5432, "ssl": False, "timeout": 30, "role": "worker"}
+```
+
+#### 対応型ヒント一覧
+
+| アノテーション | 動作 |
+|---|---|
+| `str` / `int` / `float` / `bool` | 型チェック |
+| `Optional[T]` / `Union[T, None]` | 内部型をチェック・省略可能 |
+| `List[T]` / `list[T]` | リスト要素の型チェック |
+| `Dict[K, V]` / `dict[K, V]` | 辞書の値の型チェック |
+| 任意のクラス | `isinstance` チェック |
+| `Any` / 不明な型 | チェックなし（パススルー） |
+| `Validator` インスタンス | ValidKit の完全なバリデーション |
+
+> **注意**: `Union[int, str]` / `Union[int, str, None]` や `int | str` / `int | str | None` のように、`None` 以外の複数型を持つ Union は現在サポートしていません。`validate()` の呼び出し時（スキーマ変換フェーズ）に `TypeError` が送出されます。代わりに `Optional[T]`（= `Union[T, None]`）か具体的な単一型を使用してください。複数の型を受け付けたい場合は `v.instance(MyBaseClass)` などを検討してください。
 
 ### IDE 補完を効かせる（TypedDict + Schema）
 

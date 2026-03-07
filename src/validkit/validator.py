@@ -6,15 +6,70 @@ from typing import (
     Optional,
     TypeVar,
     Union,
+    get_args,
+    get_origin,
     overload,
     TYPE_CHECKING,
     Literal,
     cast,
 )
+import types as _types
 import math
-from .v import Validator, v
+from .v import (
+    Validator,
+    v,
+    InstanceValidator,
+    StringValidator,
+    NumberValidator,
+    BoolValidator,
+    ListValidator,
+    DictValidator,
+)
 
 T = TypeVar("T")
+
+# Python 3.10+ introduced types.UnionType for PEP 604 (T | None) syntax.
+# On Python 3.9, types.UnionType does not exist; capture it once at module
+# load time so that _type_hint_to_validator() never accesses it at call time.
+# Note: the annotation uses Optional[type] (not `type | None`) so the line
+# itself is valid on Python 3.9 where PEP 604 runtime unions don't exist.
+_UnionType: Optional[type] = getattr(_types, "UnionType", None)
+
+# Basic Python types supported as schema shorthand (str, int, float, bool)
+_BASIC_TYPES = (str, int, float, bool)
+
+
+def _is_class_schema(schema: Any) -> bool:
+    """Return True if *schema* is a class that should be treated as a class-based schema.
+
+    A class qualifies when it:
+    - is a plain class (not one of the basic shorthand types),
+    - is not a Validator subclass, and
+    - either declares own ``__annotations__`` (non-empty) or has at least one Validator
+      class attribute in its own ``__dict__``.
+
+    Using ``cls.__dict__.get("__annotations__", {})`` (rather than ``hasattr``) ensures that
+    inherited annotations from parent classes or stdlib types (e.g. ``datetime.datetime``,
+    ``pathlib.Path``) do not cause false positives.
+    """
+    if not isinstance(schema, type):
+        return False
+    if schema in _BASIC_TYPES:
+        return False
+    if issubclass(schema, Validator):
+        return False
+    # Check only the class's OWN annotations — not those inherited from base classes.
+    # This prevents stdlib classes (datetime.datetime, pathlib.Path, etc.) from being
+    # mistakenly detected as class schemas when their parent classes carry annotations.
+    own_annotations = schema.__dict__.get("__annotations__", {})
+    if own_annotations:
+        return True
+    # Also accept classes whose only schema fields are Validator instances.
+    return any(
+        isinstance(val, Validator)
+        for k, val in schema.__dict__.items()
+        if not k.startswith("_")
+    )
 
 
 class Schema(Generic[T]):
@@ -40,7 +95,7 @@ class Schema(Generic[T]):
     より豊かなスキーマ定義が可能になります。
     """
 
-    def __init__(self, schema: Dict[str, Any]) -> None:
+    def __init__(self, schema: Any) -> None:
         self._schema = schema
 
     def generate_sample(self) -> Dict[str, Any]:
@@ -93,6 +148,159 @@ class ValidationResult:
         self.data = data
         self.errors = errors or []
 
+def _type_hint_to_validator(
+    hint: Any,
+    has_default: bool = False,
+    default_val: Any = None,
+) -> Validator:
+    """Python 型ヒントを Validator に変換します。
+
+    対応する型ヒント:
+
+    * ``str``, ``int``, ``float``, ``bool`` — 各型の基本バリデータ
+    * ``Optional[T]`` / ``Union[T, None]`` — 内部型のバリデータに ``.optional()`` を付与
+    * ``list[T]`` / ``List[T]`` — ``v.list()`` ラッパー (要素型を再帰的に変換)
+    * ``dict[K, V]`` / ``Dict[K, V]`` — ``v.dict()`` ラッパー (値型を再帰的に変換)
+    * 任意のクラス — ``InstanceValidator`` による isinstance チェック
+    * ``Any`` / 不明な型 — すべての値を通過させる基底 Validator
+
+    Args:
+        hint: 変換元の Python 型ヒント。
+        has_default: デフォルト値を付与するかどうか。
+        default_val: ``has_default=True`` のときに使用するデフォルト値。
+
+    Returns:
+        対応する Validator インスタンス。
+    """
+    val: Validator
+    optional_flag = False
+
+    origin = get_origin(hint)
+    args = get_args(hint)
+
+    # --- Optional[T] / Union[T, None] and PEP 604 T | None / T1 | T2 ---
+    # Also handles Python 3.10+ types.UnionType (PEP 604); _UnionType is None
+    # on Python 3.9 where types.UnionType doesn't exist (module-level guard).
+    if origin is Union or (_UnionType is not None and isinstance(hint, _UnionType)):
+        non_none_args = [a for a in args if a is not type(None)]
+        if type(None) in args:
+            optional_flag = True
+        if len(non_none_args) == 1:
+            # True Optional[T]: recurse with the single inner type
+            val = _type_hint_to_validator(non_none_args[0])
+        else:
+            # Union with multiple non-None members is not supported: fail fast instead of silently
+            # disabling type checking. (This also covers Union[T1, T2, None] where None is present
+            # but there are still multiple non-None members and no single target type can be inferred.
+            # Applies equally to PEP 604 syntax: int | str | None raises the same error.)
+            raise TypeError(
+                f"typing.Union with multiple non-None members is not supported as schema annotations: {hint!r}. "
+                "Use Optional[T] (Union[T, None]) with a single non-None type, or a plain type instead."
+            )
+
+    # --- list[T] / List[T] ---
+    elif origin is list:
+        item_hint: Any = args[0] if args else Any
+        # For basic types use the shorthand; for others build a Validator
+        if isinstance(item_hint, type) and item_hint in _BASIC_TYPES:
+            item_validator: Any = item_hint
+        else:
+            item_validator = _type_hint_to_validator(item_hint)
+        val = ListValidator(item_validator)
+
+    # --- dict[K, V] / Dict[K, V] ---
+    elif origin is dict:
+        key_type: Any = args[0] if args else str
+        val_hint: Any = args[1] if len(args) > 1 else Any
+        if isinstance(val_hint, type) and val_hint in _BASIC_TYPES:
+            val_validator: Any = val_hint
+        else:
+            val_validator = _type_hint_to_validator(val_hint)
+        # Key type must be a concrete type; fall back to str for generics
+        if not isinstance(key_type, type):
+            key_type = str
+        val = DictValidator(key_type, val_validator)
+
+    # --- Basic shorthand types ---
+    elif hint is str:
+        val = StringValidator()
+    elif hint is int:
+        val = NumberValidator(int)
+    elif hint is float:
+        val = NumberValidator(float)
+    elif hint is bool:
+        val = BoolValidator()
+
+    # --- Arbitrary concrete class → isinstance check ---
+    elif isinstance(hint, type):
+        val = InstanceValidator(hint)
+
+    # --- Any / Unknown (e.g. typing.Any, forward references) → passthrough ---
+    else:
+        val = Validator()
+
+    if has_default:
+        # Apply default value via public API; defaulted fields are effectively optional.
+        val = val.default(default_val)
+    elif optional_flag:
+        # Mark field as optional via public API.
+        val = val.optional()
+
+    return val
+
+
+def _class_to_schema(cls: type) -> Dict[str, Any]:
+    """クラスのアノテーションとクラス属性からスキーマ辞書を生成します。
+
+    優先順位:
+    1. クラス属性が Validator インスタンスの場合、そのまま使用する。
+    2. 型アノテーションを ``_type_hint_to_validator()`` で Validator に変換する:
+
+       * ``str``, ``int``, ``float``, ``bool`` → 基本バリデータ
+       * ``Optional[T]`` / ``Union[T, None]`` → 内部型バリデータ + ``.optional()``
+       * ``list[T]`` / ``List[T]`` → ``ListValidator``
+       * ``dict[K, V]`` / ``Dict[K, V]`` → ``DictValidator``
+       * 任意クラス → ``InstanceValidator``
+       * ``Any`` / 不明 → パススルー Validator
+
+    クラス属性として Validator 以外のデフォルト値が定義されている場合、
+    生成した Validator に自動的にデフォルト値を付与します。
+
+    Args:
+        cls: ``__annotations__`` を持つ任意のクラス。
+
+    Returns:
+        validkit のスキーマ辞書。
+    """
+    schema: Dict[str, Any] = {}
+
+    # 1. Collect fields defined as Validator class attributes (with or without annotation)
+    for key in vars(cls):
+        if key.startswith("_"):
+            continue
+        attr = vars(cls)[key]
+        if isinstance(attr, Validator):
+            schema[key] = attr
+
+    # 2. Process type annotations (only those declared directly on this class, not inherited)
+    annotations: Dict[str, Any] = cls.__dict__.get("__annotations__", {})
+    for key, type_hint in annotations.items():
+        if key in schema:
+            # Already have a Validator class attribute for this field — skip
+            continue
+
+        # Check for a non-Validator class attribute that acts as default value
+        has_default = False
+        default_val: Any = None
+        if key in vars(cls) and not isinstance(vars(cls)[key], Validator):
+            has_default = True
+            default_val = vars(cls)[key]
+
+        schema[key] = _type_hint_to_validator(type_hint, has_default=has_default, default_val=default_val)
+
+    return schema
+
+
 def validate_internal(
     value: Any, 
     schema: Any, 
@@ -104,7 +312,7 @@ def validate_internal(
     errors: Optional[List[ErrorDetail]] = None
 ) -> Any:
     # 1. Shorthand types
-    if isinstance(schema, type) and schema in (str, int, float, bool):
+    if isinstance(schema, type) and schema in _BASIC_TYPES:
         if schema is str:
             schema = v.str()
         elif schema is int:
@@ -113,6 +321,10 @@ def validate_internal(
             schema = v.float()
         elif schema is bool:
             schema = v.bool()
+
+    # 1b. Class-based schema (class with __annotations__ or Validator class attributes)
+    if _is_class_schema(schema):
+        schema = _class_to_schema(schema)
 
     # 2. Validator objects
     if isinstance(schema, Validator):
@@ -253,12 +465,26 @@ def _validate_generated_value(schema: Validator, candidate: Any) -> Any:
 
 def _generate_validator_sample(schema: Validator) -> Any:
     """Validator 1件分の候補値を生成し、制約を満たすことを保証します。"""
+    if isinstance(schema, InstanceValidator):
+        if schema._has_default:
+            return _validate_generated_value(schema, schema._default_value)
+        if schema._examples:
+            return _validate_generated_value(schema, schema._examples[0])
+        # 任意クラスの妥当なダミー値は一般に構成できないため、従来どおり None を返す。
+        return None
     if schema._has_default:
         return _validate_generated_value(schema, schema._default_value)
     if schema._examples:
         return _validate_generated_value(schema, schema._examples[0])
 
-    from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator
+    from .v import (
+        StringValidator,
+        NumberValidator,
+        BoolValidator,
+        ListValidator,
+        DictValidator,
+        OneOfValidator,
+    )
 
     if isinstance(schema, StringValidator):
         candidate: Any = "example"
@@ -284,7 +510,7 @@ def _generate_sample(schema: Any) -> Any:
     Schema.generate_sample() の内部実装です。
 
     Args:
-        schema: dict スキーマ、Validator インスタンス、または Python 型。
+        schema: dict スキーマ、Validator インスタンス、Python 型、またはクラス。
 
     Returns:
         生成されたサンプル値。
@@ -292,6 +518,10 @@ def _generate_sample(schema: Any) -> Any:
     # 1. Python 型のショートハンド
     if isinstance(schema, type) and schema in _TYPE_DUMMY:
         return _TYPE_DUMMY[schema]
+
+    # 1b. クラスベーススキーマ → dict スキーマに変換してから再帰処理
+    if _is_class_schema(schema):
+        return _generate_sample(_class_to_schema(schema))
 
     # 2. Validator オブジェクト
     if isinstance(schema, Validator):
