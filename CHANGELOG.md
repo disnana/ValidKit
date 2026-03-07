@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `NumberValidator.range()` は `min > max` の不正な境界を定義時に `ValueError` で拒否するようになりました。あわせて `.min()` / `.max()` のチェーンでも矛盾する境界設定を防ぎます。
+- `Schema.generate_sample()` は生成した候補値を各バリデータで再検証するようになりました。`regex()` や `custom()` を満たせない場合は、不正なサンプルを返さず `ValueError` を送出します。
 
 ### Added
 

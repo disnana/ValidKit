@@ -173,7 +173,7 @@ result = validate({}, SCHEMA)
 
 ### サンプルデータの自動生成 (`generate_sample`)
 
-定義したスキーマから、仕様書の雛形や設定ファイルのテンプレートとして使えるサンプルデータを自動生成できます。
+定義したスキーマから、仕様書の雛形や設定ファイルのテンプレートとして使えるサンプルデータを自動生成できます。生成された値は各バリデータで再検証されるため、`regex()` や `custom()` を満たせない不正なサンプルは返しません。
 
 ```python
 SCHEMA = Schema({
@@ -191,6 +191,8 @@ sample = SCHEMA.generate_sample()
 1. `.default()` で設定された値
 2. `.examples()` リストの最初の要素
 3. 各型のダミー値（`str`: "example", `int`: 0, `bool`: False 等）
+
+`regex()` / `custom()` などで上記候補が制約を満たせない場合、`generate_sample()` は `ValueError` を送出します。その場合は妥当な `.default(...)` または `.examples([...])` を与えてください。
 
 ### 部分更新とデフォルト値のマージ (base引数)
 

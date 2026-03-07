@@ -240,6 +240,44 @@ def _generate_number_sample(schema: Any) -> Union[int, float]:
     return zero
 
 
+def _validate_generated_value(schema: Validator, candidate: Any) -> Any:
+    """生成した候補値を Validator 自身で再検証し、必要なら変換後の値を返します。"""
+    try:
+        return schema.validate(candidate, data={})
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "generate_sample() could not produce a valid sample for this validator. "
+            "Provide a .default(...) or .examples([...]) value that satisfies all constraints."
+        ) from exc
+
+
+def _generate_validator_sample(schema: Validator) -> Any:
+    """Validator 1件分の候補値を生成し、制約を満たすことを保証します。"""
+    if schema._has_default:
+        return _validate_generated_value(schema, schema._default_value)
+    if schema._examples:
+        return _validate_generated_value(schema, schema._examples[0])
+
+    from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator
+
+    if isinstance(schema, StringValidator):
+        candidate: Any = "example"
+    elif isinstance(schema, NumberValidator):
+        candidate = _generate_number_sample(schema)
+    elif isinstance(schema, BoolValidator):
+        candidate = False
+    elif isinstance(schema, OneOfValidator):
+        candidate = schema._choices[0] if schema._choices else None
+    elif isinstance(schema, ListValidator):
+        candidate = [_generate_sample(schema._item_validator)]
+    elif isinstance(schema, DictValidator):
+        candidate = {"key": _generate_sample(schema._value_validator)}
+    else:
+        candidate = None
+
+    return _validate_generated_value(schema, candidate)
+
+
 def _generate_sample(schema: Any) -> Any:
     """
     スキーマ定義を再帰的に走査し、サンプルデータを生成します。
@@ -257,28 +295,7 @@ def _generate_sample(schema: Any) -> Any:
 
     # 2. Validator オブジェクト
     if isinstance(schema, Validator):
-        # 優先順位: default > examples の先頭 > 型ダミー
-        if schema._has_default:
-            return schema._default_value
-        if schema._examples:
-            return schema._examples[0]
-        # 型ダミーを型名から推定
-        from .v import StringValidator, NumberValidator, BoolValidator, ListValidator, DictValidator, OneOfValidator
-        if isinstance(schema, StringValidator):
-            return "example"
-        if isinstance(schema, NumberValidator):
-            return _generate_number_sample(schema)
-        if isinstance(schema, BoolValidator):
-            return False
-        if isinstance(schema, OneOfValidator):
-            return schema._choices[0] if schema._choices else None
-        if isinstance(schema, ListValidator):
-            inner = _generate_sample(schema._item_validator)
-            return [inner]
-        if isinstance(schema, DictValidator):
-            inner = _generate_sample(schema._value_validator)
-            return {"key": inner}
-        return None
+        return _generate_validator_sample(schema)
 
     # 3. dict スキーマ → 再帰的に走査
     if isinstance(schema, dict):

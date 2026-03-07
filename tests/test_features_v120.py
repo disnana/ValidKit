@@ -229,6 +229,40 @@ class TestGenerateSample:
         assert sample["ratio"] == 0.5
         assert validate(sample, schema)["ratio"] == 0.5
 
+    def test_generate_sample_uses_example_that_matches_regex(self):
+        """regex 制約つきでも examples の先頭が妥当ならその値を返す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$").examples(["123-4567"])})
+        sample = schema.generate_sample()
+        assert sample["postal_code"] == "123-4567"
+        assert validate(sample, schema)["postal_code"] == "123-4567"
+
+    def test_generate_sample_applies_custom_transformations(self):
+        """custom が変換を返す場合、generate_sample も変換後の値を返す"""
+        schema = Schema({
+            "code": v.str().custom(lambda value: value.strip()).custom(lambda value: value.upper())
+        })
+        sample = schema.generate_sample()
+        assert sample["code"] == "EXAMPLE"
+        assert validate(sample, schema)["code"] == "EXAMPLE"
+
+    def test_generate_sample_raises_when_regex_cannot_be_satisfied(self):
+        """default/examples がなく regex を満たす候補を作れない場合は ValueError を出す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$")})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
+    def test_generate_sample_raises_when_default_violates_constraints(self):
+        """default が制約違反なら不正なサンプルを返さず ValueError を出す"""
+        schema = Schema({"postal_code": v.str().regex(r"^\d{3}-\d{4}$").default("example")})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
+    def test_generate_sample_raises_when_custom_rejects_dummy_value(self):
+        """custom が型ダミー値を拒否する場合は ValueError を出す"""
+        schema = Schema({"code": v.str().custom(lambda value: value if value.startswith("ID-") else (_ for _ in ()).throw(ValueError("invalid code")))})
+        with pytest.raises(ValueError, match=r"generate_sample\(\) could not produce a valid sample"):
+            schema.generate_sample()
+
 
 # ============================================================
 # v.auto_infer() のテスト
