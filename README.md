@@ -33,6 +33,7 @@ ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キー
 * [高度な使い方](#高度な使い方)
   * [クラス記法によるスキーマ定義](#クラス記法によるスキーマ定義)
   * [IDE 補完を効かせる（TypedDict + Schema）](#ide-補完を効かせるtypeddict--schema)
+  * [スキーマを既存データから逆生成する（v.auto_infer）](#auto-infer)
   * [部分更新とデフォルト値のマージ](#部分更新とデフォルト値のマージ)
   * [マイグレーション](#マイグレーション)
 * [品質管理・セキュリティ](#品質管理セキュリティ)
@@ -369,31 +370,6 @@ result = validate(normalized, schema)
 - 既存データからスキーマをブートストラップしたいとき
 - カスタム型を `type_map` でプリミティブへ落として推論したいとき
 - 一部のフィールドだけ `schema_overrides` で明示的に厳しくしたいとき
-
-### スキーマ自動生成 (`v.auto_infer`)
-
-既存データから ValidKit スキーマを逆生成できます。プロトタイピングや既存 JSON / dict からの移行時に便利です。
-
-```python
-import datetime
-from validkit import v
-
-data = {
-    "name": "Alice",
-    "score": 9.5,
-    "created_at": datetime.date(2024, 1, 1),
-}
-
-schema = v.auto_infer(
-    data,
-    type_map={datetime.date: v.str()},
-    schema_overrides={"score": v.float().range(0.0, 10.0)},
-)
-```
-
-- `type_map` でカスタム型を処理できます
-- `schema_overrides` でトップレベル dict の特定フィールドだけ推論結果を上書きできます
-- `None` は `optional()` なバリデータとして推論されます
 
 ### 部分更新とデフォルト値のマージ (base引数)
 
