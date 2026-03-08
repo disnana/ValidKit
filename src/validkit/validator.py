@@ -13,6 +13,7 @@ from typing import (
     Literal,
     cast,
 )
+from collections.abc import Mapping
 import types as _types
 import math
 from .v import (
@@ -39,6 +40,18 @@ _UnionType: Optional[type] = getattr(_types, "UnionType", None)
 _BASIC_TYPES = (str, int, float, bool)
 
 
+def _get_class_annotations(schema: type) -> Dict[str, Any]:
+    """Return annotations declared on *schema*, including lazily exposed ones."""
+    own_annotations = schema.__dict__.get("__annotations__")
+    if isinstance(own_annotations, Mapping):
+        return dict(own_annotations)
+
+    dynamic_annotations = getattr(schema, "__annotations__", None)
+    if isinstance(dynamic_annotations, Mapping):
+        return dict(dynamic_annotations)
+    return {}
+
+
 def _is_class_schema(schema: Any) -> bool:
     """Return True if *schema* is a class that should be treated as a class-based schema.
 
@@ -48,9 +61,8 @@ def _is_class_schema(schema: Any) -> bool:
     - either declares own ``__annotations__`` (non-empty) or has at least one Validator
       class attribute in its own ``__dict__``.
 
-    Using ``cls.__dict__.get("__annotations__", {})`` (rather than ``hasattr``) ensures that
-    inherited annotations from parent classes or stdlib types (e.g. ``datetime.datetime``,
-    ``pathlib.Path``) do not cause false positives.
+    ``__annotations__`` may be exposed lazily on newer Python versions, so we use a helper
+    that first checks the class ``__dict__`` and then falls back to ``getattr(...)``.
     """
     if not isinstance(schema, type):
         return False
@@ -61,7 +73,7 @@ def _is_class_schema(schema: Any) -> bool:
     # Check only the class's OWN annotations — not those inherited from base classes.
     # This prevents stdlib classes (datetime.datetime, pathlib.Path, etc.) from being
     # mistakenly detected as class schemas when their parent classes carry annotations.
-    own_annotations = schema.__dict__.get("__annotations__", {})
+    own_annotations = _get_class_annotations(schema)
     if own_annotations:
         return True
     # Also accept classes whose only schema fields are Validator instances.
@@ -283,7 +295,7 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
             schema[key] = attr
 
     # 2. Process type annotations (only those declared directly on this class, not inherited)
-    annotations: Dict[str, Any] = cls.__dict__.get("__annotations__", {})
+    annotations = _get_class_annotations(cls)
     for key, type_hint in annotations.items():
         if key in schema:
             # Already have a Validator class attribute for this field — skip
