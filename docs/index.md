@@ -32,6 +32,20 @@ ValidKit の API リファレンスおよび高度な使用方法について詳
 
 型情報を持つスキーマのラッパーです。
 
+`Schema({...})` による従来の dict スキーマに加えて、実行時には `Schema(MyClass)` のように
+クラス記法スキーマもそのままラップできます。
+
+```python
+from validkit import Schema, validate
+
+class Profile:
+    name: str
+    age: int
+
+schema = Schema(Profile)
+result = validate({"name": "Alice", "age": 30}, schema)
+```
+
 #### `.generate_sample()`
 スキーマ定義からサンプルデータの辞書を生成します。生成後の値は各バリデータで再検証されるため、制約を満たさないサンプルは返されません。
 
@@ -42,6 +56,83 @@ sample = SCHEMA.generate_sample()
 優先順位: `.default()` > `.examples()[0]` > 各型のデフォルト値。
 
 `regex()` や `custom()` などでこれらの候補が制約を満たせない場合は、`ValueError` を送出します。その場合は `.default(...)` または `.examples([...])` で妥当なサンプル候補を与えてください。
+
+### クラス記法スキーマ
+
+辞書スキーマに加えて、Python クラスの型アノテーションや `Validator` クラス属性をそのまま
+スキーマとして扱えます。
+
+#### 基本的な使い方
+
+```python
+from typing import Dict, List, Optional
+from validkit import v, validate, ValidationError
+
+class Config:
+    host: str
+    port: int = 5432                  # クラス属性 → デフォルト値
+    tags: Optional[List[str]]         # 省略可能なリスト
+    metadata: Dict[str, int]
+    role = v.str().default("worker")  # Validator クラス属性
+
+# 必須フィールドのみ指定 — デフォルト値が自動補完される
+result = validate(
+    {"host": "db.local", "metadata": {"connections": 10}},
+    Config,
+)
+# -> {"host": "db.local", "port": 5432, "metadata": {"connections": 10}, "role": "worker"}
+# tags は Optional なので省略可能
+
+# 型が合わない場合は ValidationError
+try:
+    validate({"host": 123, "metadata": {}}, Config)
+except ValidationError as e:
+    print(e.path, e.message)  # "host" / "Expected str, got int"
+```
+
+#### カスタム型 (オリジナルクラス)
+
+```python
+from validkit import v, validate
+
+class Timezone:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+UTC = Timezone("UTC")
+
+class ServerConfig:
+    name: str
+    timezone: Timezone  # → isinstance(value, Timezone) で検証
+
+result = validate({"name": "server1", "timezone": UTC}, ServerConfig)
+# -> {"name": "server1", "timezone": <Timezone "UTC">}
+
+# 辞書スキーマで同じことをするには v.instance() を使う
+schema = {
+    "name": v.str(),
+    "timezone": v.instance(Timezone).default(UTC),
+}
+result = validate({"name": "server1"}, schema)
+# -> {"name": "server1", "timezone": <Timezone "UTC">}  (デフォルト補完)
+```
+
+対応する型ヒント:
+
+| アノテーション | 動作 |
+|---|---|
+| `str` / `int` / `float` / `bool` | 型チェック |
+| `Optional[T]` / `Union[T, None]` | 内部型をチェックし、省略可能 |
+| `List[T]` / `list[T]` | 要素ごとの型チェック |
+| `Dict[K, V]` / `dict[K, V]` | 値の型チェック |
+| 任意のクラス | `isinstance` チェック |
+| `Validator` クラス属性 | その Validator をそのまま使用 |
+
+`v.instance(MyType)` を使うと、辞書スキーマでも同じ `isinstance` チェックを明示的に書けます。
+
+> **注意**: `Union[int, str]` / `Union[int, str, None]` や `int | str` / `int | str | None` のように、`None` 以外の複数型を持つ Union は現在サポートしていません。スキーマ変換時に `TypeError` を送出します。代わりに `Optional[T]`、単一型、または `v.instance(...)` を使用してください。
+
+---
 
 ### スキーマ自動生成
 
@@ -125,6 +216,7 @@ schema = v.auto_infer(
 - `v.list(item_schema)`: 各要素が `item_schema` に適合するリストであることを検証。
 - `v.dict(key_type, value_schema)`: キーが `key_type` であり、値が `value_schema` に適合する辞書であることを検証。
 - `v.oneof(choices)`: 値が `choices` リストのいずれかであることを検証。
+- `v.instance(type_cls)`: 任意クラスに対する `isinstance` チェックを行います。
 
 ### 修飾メソッド（チェーンメソッド）
 すべてのバリデータで使用可能なメソッド：

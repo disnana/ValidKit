@@ -237,6 +237,40 @@ class OneOfValidator(Validator):
             raise ValueError(f"Value '{value}' is not one of {self._choices}")
         return self._validate_base(value, data)
 
+class InstanceValidator(Validator):
+    """カスタム型（任意のクラス）の isinstance チェックを行うバリデータ。
+
+    Usage::
+
+        import pytz
+        schema = {"tz": v.instance(pytz.BaseTzInfo)}
+        validate({"tz": pytz.utc}, schema)
+    """
+
+    def __init__(self, type_cls: Type[Any]) -> None:
+        super().__init__()
+        self._instance_type = type_cls
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if not isinstance(value, self._instance_type):
+            if self._coerce:
+                try:
+                    coerced_value = self._instance_type(value)
+                except Exception as e:
+                    raise TypeError(
+                        f"Expected instance of {self._instance_type.__name__}, got {type(value).__name__}"
+                    ) from e
+                if not isinstance(coerced_value, self._instance_type):
+                    raise TypeError(
+                        f"Expected instance of {self._instance_type.__name__}, got {type(coerced_value).__name__}"
+                    )
+                value = coerced_value
+            else:
+                raise TypeError(
+                    f"Expected instance of {self._instance_type.__name__}, got {type(value).__name__}"
+                )
+        return self._validate_base(value, data)
+
 class VBuilder:
     def str(self) -> StringValidator:
         return StringValidator()
@@ -259,6 +293,19 @@ class VBuilder:
     def oneof(self, choices: List[Any]) -> OneOfValidator:
         return OneOfValidator(choices)
 
+    def instance(self, type_cls: Type[Any]) -> InstanceValidator:
+        """カスタム型（任意のクラス）の isinstance チェックを行うバリデータを返します。
+
+        Args:
+            type_cls: バリデーション対象の型。
+
+        Example::
+
+            import datetime
+            schema = {"ts": v.instance(datetime.datetime)}
+            validate({"ts": datetime.datetime.now()}, schema)
+        """
+        return InstanceValidator(type_cls)
     @staticmethod
     def auto_infer(
         data: Any,

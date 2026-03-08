@@ -501,7 +501,7 @@ class TestAutoInfer:
     def test_type_map_callable_returning_dict_re_infers(self):
         """type_map の callable が dict を返す場合 → ネスト dict スキーマとして再推論される"""
         import datetime
-        from validkit.v import StringValidator, NumberValidator
+        from validkit.v import NumberValidator
         schema = v.auto_infer(
             datetime.date(2024, 6, 15),
             type_map={
@@ -528,7 +528,7 @@ class TestAutoInfer:
     def test_type_map_auto_convert_in_dict_field(self):
         """dict フィールドの auto-convert callable も正しく re-infer される"""
         import datetime
-        from validkit.v import StringValidator, NumberValidator
+        from validkit.v import StringValidator
         data = {"name": "Alice", "created_at": datetime.date(2024, 1, 1)}
         schema = v.auto_infer(
             data,
@@ -582,7 +582,7 @@ class TestAutoInfer:
 
     def test_schema_overrides_unmentioned_fields_still_inferred(self):
         """schema_overrides に含まれないフィールドは通常どおり推論される"""
-        from validkit.v import StringValidator, NumberValidator
+        from validkit.v import NumberValidator
         data = {"name": "Alice", "age": 30}
         schema = v.auto_infer(
             data,
@@ -627,7 +627,7 @@ class TestAutoInfer:
 
     def test_schema_overrides_does_not_leak_into_nested_dict(self):
         """schema_overrides はトップレベルの dict にのみ適用され、ネストした dict には適用されない"""
-        from validkit.v import StringValidator, NumberValidator
+        from validkit.v import StringValidator
         data = {"name": "Alice", "user": {"name": "Bob", "age": 25}}
         schema = v.auto_infer(
             data,
@@ -655,7 +655,7 @@ class TestAutoInfer:
 
     def test_type_map_callable_returning_dict_does_not_apply_schema_overrides(self):
         """type_map の callable が dict を返して再推論するとき、schema_overrides は適用されない"""
-        from validkit.v import StringValidator, NumberValidator
+        from validkit.v import NumberValidator
 
         class SpecialDate:
             def __init__(self, y, m, d):
