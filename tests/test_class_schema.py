@@ -69,6 +69,20 @@ class TestClassSchemaBasic:
             validate({"name": "Alice"}, Profile)
         assert exc_info.value.path == "age"
 
+    def test_missing_required_field_raises_with_lazy_annotations(self):
+        """遅延評価された __annotations__ でも必須フィールド欠損はエラーになる"""
+        class LazyAnnotationsMeta(type):
+            @property
+            def __annotations__(cls):
+                return {"name": str, "age": int}
+
+        class Profile(metaclass=LazyAnnotationsMeta):
+            pass
+
+        with pytest.raises(ValidationError) as exc_info:
+            validate({"name": "Alice"}, Profile)
+        assert exc_info.value.path == "age"
+
     def test_wrong_type_raises(self):
         """型が一致しない場合は ValidationError を送出する"""
         class Profile:
