@@ -62,16 +62,59 @@ sample = SCHEMA.generate_sample()
 辞書スキーマに加えて、Python クラスの型アノテーションや `Validator` クラス属性をそのまま
 スキーマとして扱えます。
 
+#### 基本的な使い方
+
 ```python
 from typing import Dict, List, Optional
-from validkit import v, validate
+from validkit import v, validate, ValidationError
 
 class Config:
     host: str
-    port: int = 5432
-    tags: Optional[List[str]]
+    port: int = 5432                  # クラス属性 → デフォルト値
+    tags: Optional[List[str]]         # 省略可能なリスト
     metadata: Dict[str, int]
-    role = v.str().default("worker")
+    role = v.str().default("worker")  # Validator クラス属性
+
+# 必須フィールドのみ指定 — デフォルト値が自動補完される
+result = validate(
+    {"host": "db.local", "metadata": {"connections": 10}},
+    Config,
+)
+# -> {"host": "db.local", "port": 5432, "metadata": {"connections": 10}, "role": "worker"}
+# tags は Optional なので省略可能
+
+# 型が合わない場合は ValidationError
+try:
+    validate({"host": 123, "metadata": {}}, Config)
+except ValidationError as e:
+    print(e.path, e.message)  # "host" / "Expected str, got int"
+```
+
+#### カスタム型 (オリジナルクラス)
+
+```python
+from validkit import v, validate
+
+class Timezone:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+UTC = Timezone("UTC")
+
+class ServerConfig:
+    name: str
+    timezone: Timezone  # → isinstance(value, Timezone) で検証
+
+result = validate({"name": "server1", "timezone": UTC}, ServerConfig)
+# -> {"name": "server1", "timezone": <Timezone "UTC">}
+
+# 辞書スキーマで同じことをするには v.instance() を使う
+schema = {
+    "name": v.str(),
+    "timezone": v.instance(Timezone).default(UTC),
+}
+result = validate({"name": "server1"}, schema)
+# -> {"name": "server1", "timezone": <Timezone "UTC">}  (デフォルト補完)
 ```
 
 対応する型ヒント:
@@ -88,6 +131,9 @@ class Config:
 `v.instance(MyType)` を使うと、辞書スキーマでも同じ `isinstance` チェックを明示的に書けます。
 
 > **注意**: `Union[int, str]` / `Union[int, str, None]` や `int | str` / `int | str | None` のように、`None` 以外の複数型を持つ Union は現在サポートしていません。スキーマ変換時に `TypeError` を送出します。代わりに `Optional[T]`、単一型、または `v.instance(...)` を使用してください。
+
+---
+
 ### スキーマ自動生成
 
 #### `v.auto_infer(data, type_map=None, schema_overrides=None)`
