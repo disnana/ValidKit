@@ -41,15 +41,35 @@ _BASIC_TYPES = (str, int, float, bool)
 
 
 def _get_class_annotations(schema: type) -> Dict[str, Any]:
-    """Return annotations declared on *schema*, including lazily exposed ones."""
+    """Return annotations declared directly on *schema* (not inherited from base classes).
+
+    Prefers ``schema.__dict__["__annotations__"]`` to avoid Python 3.9's MRO traversal
+    behavior where ``getattr(cls, "__annotations__")`` returns a *parent* class's dict
+    when the child declares no annotations of its own.
+
+    The ``getattr`` fallback is kept only for metaclass-defined ``__annotations__``
+    properties (lazily computed annotations).  In that case the returned mapping is a
+    freshly constructed object that cannot be ``is``-identical to any base class's
+    annotations dict, so the identity guard below correctly passes it through.
+    """
     own_annotations = schema.__dict__.get("__annotations__")
     if isinstance(own_annotations, Mapping):
         return dict(own_annotations)
 
+    # Fallback for metaclass-defined __annotations__ properties.
     dynamic_annotations = getattr(schema, "__annotations__", None)
-    if isinstance(dynamic_annotations, Mapping):
-        return dict(dynamic_annotations)
-    return {}
+    if not isinstance(dynamic_annotations, Mapping):
+        return {}
+
+    # In Python 3.9, getattr traverses the class MRO and may return a parent
+    # class's __annotations__ dict as-is (same object identity).  If the result
+    # is identical to any base class's own annotations, treat it as inherited and
+    # return an empty dict to avoid incorrectly pulling in parent-class fields.
+    for base in schema.__mro__[1:]:
+        if base.__dict__.get("__annotations__") is dynamic_annotations:
+            return {}
+
+    return dict(dynamic_annotations)
 
 
 def _is_class_schema(schema: Any) -> bool:
