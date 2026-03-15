@@ -21,6 +21,49 @@ def test_string_regex():
     with pytest.raises(ValidationError):
         validate("123-456", validator)
 
+def test_string_length_min():
+    validator = v.str().min(3)
+    assert validate("abc", validator) == "abc"
+    assert validate("abcd", validator) == "abcd"
+    with pytest.raises(ValidationError) as excinfo:
+        validate("ab", validator)
+    assert "shorter than minimum length" in str(excinfo.value)
+
+def test_string_length_max():
+    validator = v.str().max(5)
+    assert validate("abcde", validator) == "abcde"
+    assert validate("a", validator) == "a"
+    assert validate("", validator) == ""
+    with pytest.raises(ValidationError) as excinfo:
+        validate("abcdef", validator)
+    assert "longer than maximum length" in str(excinfo.value)
+
+def test_string_length_range():
+    validator = v.str().range(3, 5)
+    assert validate("abc", validator) == "abc"
+    assert validate("abcde", validator) == "abcde"
+    with pytest.raises(ValidationError):
+        validate("ab", validator)
+    with pytest.raises(ValidationError):
+        validate("abcdef", validator)
+
+def test_string_length_invalid_bounds():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        v.str().min(-1)
+    with pytest.raises(ValueError, match="cannot be negative"):
+        v.str().max(-1)
+    with pytest.raises(ValueError, match="cannot be negative"):
+        v.str().range(-1, 5)
+        
+    with pytest.raises(ValueError, match="cannot be greater than maximum length"):
+        v.str().min(5).max(3)
+    
+    with pytest.raises(ValueError, match="cannot be greater than maximum length"):
+        v.str().max(3).min(5)
+        
+    with pytest.raises(ValueError, match="cannot be greater than maximum length"):
+        v.str().range(5, 3)
+
 def test_number_range():
     validator = v.int().range(10, 20)
     assert validate(15, validator) == 15

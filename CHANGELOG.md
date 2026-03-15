@@ -6,9 +6,10 @@
 - `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
 - 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
-## Unreleased
+## [1.2.3] - 2026-03-15
 
 ### Added
+- `v.str()` で文字列の長さを検証する `min()`, `max()`, `range()` メソッドを追加しました。
 - クラス記法スキーマ (`class Config: ...`) を追加し、型アノテーションと `Validator` クラス属性を既存の dict スキーマ検証経路へ変換できるようになりました。
 - `v.instance(type_cls)` / `InstanceValidator` を追加し、任意クラスに対する `isinstance` ベースの検証と `.coerce()` をサポートしました。
 

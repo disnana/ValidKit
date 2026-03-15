@@ -115,6 +115,33 @@ class StringValidator(Validator):
     def __init__(self) -> None:
         super().__init__()
         self._regex: Optional[re.Pattern[str]] = None
+        self._min_len: Optional[int] = None
+        self._max_len: Optional[int] = None
+
+    def min(self, min_length: int) -> "StringValidator":
+        if min_length < 0:
+            raise ValueError(f"Invalid range: minimum length {min_length} cannot be negative")
+        if self._max_len is not None and min_length > self._max_len:
+            raise ValueError(f"Invalid range: minimum length {min_length} cannot be greater than maximum length {self._max_len}")
+        self._min_len = min_length
+        return self
+
+    def max(self, max_length: int) -> "StringValidator":
+        if max_length < 0:
+            raise ValueError(f"Invalid range: maximum length {max_length} cannot be negative")
+        if self._min_len is not None and self._min_len > max_length:
+            raise ValueError(f"Invalid range: minimum length {self._min_len} cannot be greater than maximum length {max_length}")
+        self._max_len = max_length
+        return self
+
+    def range(self, min_length: int, max_length: int) -> "StringValidator":
+        if min_length < 0 or max_length < 0:
+            raise ValueError("Invalid range: length bounds cannot be negative")
+        if min_length > max_length:
+            raise ValueError(f"Invalid range: minimum length {min_length} cannot be greater than maximum length {max_length}")
+        self._min_len = min_length
+        self._max_len = max_length
+        return self
 
     def regex(self, pattern: str) -> "StringValidator":
         self._regex = re.compile(pattern)
@@ -125,6 +152,16 @@ class StringValidator(Validator):
             value = str(value)
         if not isinstance(value, str):
             raise TypeError(f"Expected str, got {type(value).__name__}")
+            
+        # 1. 最小長チェック
+        if self._min_len is not None and len(value) < self._min_len:
+            raise ValueError(f"String length {len(value)} is shorter than minimum length {self._min_len}")
+            
+        # 2. 最大長チェック
+        if self._max_len is not None and len(value) > self._max_len:
+            raise ValueError(f"String length {len(value)} is longer than maximum length {self._max_len}")
+            
+        # 3. 正規表現チェック
         if self._regex and not self._regex.match(value):
             raise ValueError(f"Value '{value}' does not match regex '{self._regex.pattern}'")
         return cast(str, self._validate_base(value, data))

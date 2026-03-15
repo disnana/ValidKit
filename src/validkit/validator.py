@@ -463,6 +463,22 @@ _TYPE_DUMMY: Dict[Any, Any] = {
     bool: False,
 }
 
+def _generate_string_sample(schema: Any) -> str:
+    """StringValidator の制約内に収まる代表値を返します。"""
+    candidate = "example"
+    # min_lenがある場合、candidateの長さを必要な分だけ繰り返して満たす
+    if schema._min_len is not None and len(candidate) < schema._min_len:
+        repeats = (schema._min_len // len(candidate)) + 1
+        candidate = (candidate * repeats)[:schema._min_len]
+    
+    # max_lenがある場合、切り詰める
+    if schema._max_len is not None and len(candidate) > schema._max_len:
+        candidate = candidate[:schema._max_len]
+        
+    # ※正規表現に「example」がマッチしない場合や、複雑な正規表現から自動生成するのは
+    # 本来困難なため、必要なら .examples() に頼る前提としておく
+    return candidate
+
 
 def _generate_number_sample(schema: Any) -> Union[int, float]:
     """NumberValidator の制約内に収まる代表値を返します。"""
@@ -519,7 +535,7 @@ def _generate_validator_sample(schema: Validator) -> Any:
     )
 
     if isinstance(schema, StringValidator):
-        candidate: Any = "example"
+        candidate: Any = _generate_string_sample(schema)
     elif isinstance(schema, NumberValidator):
         candidate = _generate_number_sample(schema)
     elif isinstance(schema, BoolValidator):
