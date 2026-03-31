@@ -390,7 +390,9 @@ class DateTimeValidator(Validator):
                 return val.replace(tzinfo=reference.tzinfo)
             if not reference.tzinfo and val.tzinfo:
                 return val.replace(tzinfo=None)
-            return cast(dt_module.datetime, val)
+            
+            # redundant-cast エラーを回避しつつ、正しく戻り値を返す
+            return val
 
         if self._after_now and check_val <= now:
             raise ValueError(f"Datetime {value} must be after now ({now})")
