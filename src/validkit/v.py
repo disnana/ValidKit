@@ -27,6 +27,7 @@ class Validator:
         self._description: Optional[str] = None
         self._secret_val = False
         self._env_key: Optional[str] = None
+        self._env_decryptor: Optional[Callable[[str], str]] = None
         self._custom_error_msg: Optional[str] = None
 
     def secret(self) -> "Validator":
@@ -34,9 +35,13 @@ class Validator:
         self._secret_val = True
         return self
 
-    def env(self, env_key: str) -> "Validator":
-        """データが欠損している場合、指定した環境変数から値を取得します。"""
+    def env(self, env_key: str, decryptor: Optional[Callable[[str], str]] = None) -> "Validator":
+        """
+        データが欠損している場合、指定した環境変数から値を取得します。
+        decryptor が指定されている場合、取得した値（文字列）を事前に加工/復号してから検証にかけます。
+        """
         self._env_key = env_key
+        self._env_decryptor = decryptor
         return self
 
     def error_msg(self, msg: str) -> "Validator":
@@ -369,12 +374,14 @@ class DateTimeValidator(Validator):
         if not isinstance(value, (dt_module.datetime, dt_module.date)):
             raise TypeError(f"Expected datetime or date, got {type(value).__name__}")
         
-        check_val = value
-        if isinstance(value, dt_module.date) and not isinstance(value, dt_module.datetime):
+        check_val: dt_module.datetime
+        if isinstance(value, dt_module.datetime):
+            check_val = value
+        else:
             check_val = dt_module.datetime.combine(value, dt_module.time.min)
         
         # タイムゾーン対応: どちらか一方が aware の場合、比較対象も合わせる
-        now = dt_module.datetime.now(check_val.tzinfo if isinstance(check_val, dt_module.datetime) and check_val.tzinfo else None)
+        now = dt_module.datetime.now(check_val.tzinfo if check_val.tzinfo else None)
         
         def _get_cmp_val(val: Union[dt_module.datetime, dt_module.date], reference: dt_module.datetime) -> dt_module.datetime:
             if isinstance(val, dt_module.date) and not isinstance(val, dt_module.datetime):

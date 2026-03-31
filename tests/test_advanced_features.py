@@ -4,7 +4,7 @@ from enum import Enum
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
-from validkit import v, validate, ValidationError, ValidationResult
+from validkit import v, validate, ValidationError
 
 class Color(Enum):
     RED = "red"
@@ -47,6 +47,20 @@ class TestAdvancedFeatures(unittest.TestCase):
         del os.environ["TEST_TOKEN"]
         with self.assertRaises(ValidationError):
             validate({}, schema)
+
+        # decryptor のテスト
+        schema_decrypt = {"api_secret": v.str().env("MY_SECRET", decryptor=lambda x: x[::-1])} # 逆順にする簡易復号
+        os.environ["MY_SECRET"] = "terces"
+        res_decrypt = validate({}, schema_decrypt)
+        self.assertEqual(res_decrypt["api_secret"], "secret")
+        
+        # decryptor がエラーを投げた場合
+        def bad_decryptor(x):
+            raise ValueError("Decryption failed!")
+        schema_bad_decrypt = {"api_secret": v.str().env("MY_SECRET", decryptor=bad_decryptor)}
+        with self.assertRaises(ValidationError) as ctx_err:
+            validate({}, schema_bad_decrypt)
+        self.assertIn("Failed to decrypt env var", ctx_err.exception.message)
 
     def test_error_msg(self):
         custom_msg = "ちゃんと入力してね！"

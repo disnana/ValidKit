@@ -411,6 +411,15 @@ def validate_internal(
                 if isinstance(sub_schema, Validator) and getattr(sub_schema, "_env_key", None):
                     import os
                     env_val = os.environ.get(sub_schema._env_key)
+                    if env_val is not None and getattr(sub_schema, "_env_decryptor", None):
+                        try:
+                            env_val = sub_schema._env_decryptor(env_val)
+                        except Exception as e:
+                            err_msg = f"Failed to decrypt env var: {e}"
+                            if collect_errors and errors is not None:
+                                errors.append(ErrorDetail(current_path, err_msg, None))
+                                continue
+                            raise ValidationError(err_msg, current_path, None)
 
                 if env_val is not None:
                     val = env_val

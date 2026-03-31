@@ -3,6 +3,9 @@ import os
 from typing import Dict, List, Optional, TypedDict
 import io
 import ipaddress
+import datetime
+import uuid
+from enum import Enum
 
 # Handle UTF-8 output on Windows
 if sys.platform == "win32":
@@ -12,7 +15,8 @@ if sys.platform == "win32":
 # Add src to path to import validkit
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 
-from src.validkit import v, validate, ValidationError, Schema, ValidationResult
+from validkit import v, validate, ValidationError, Schema, ValidationResult
+
 
 def header(text: str):
     print(f"\n{'='*20} {text} {'='*20}")
@@ -505,9 +509,6 @@ header("v1.3.0 の全デモが正常に終了しました。")
 # 6. セキュリティ＆開発体験向上機能 (Secret, Env, URL, Enum)
 # ==========================================
 header("6. セキュリティ＆開発体験向上機能")
-
-from enum import Enum
-import os
 
 class Role(Enum):
     ADMIN = "admin"
