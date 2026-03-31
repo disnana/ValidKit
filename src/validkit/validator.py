@@ -372,11 +372,12 @@ def validate_internal(
         try:
             return schema.validate(value, root_data, path_prefix=path_prefix, collect_errors=collect_errors, errors=errors)
         except (TypeError, ValueError) as e:
-            err_msg = str(e)
+            err_msg = schema._custom_error_msg if schema._custom_error_msg else str(e)
+            err_val = "***" if schema._secret_val else value
             if collect_errors and errors is not None:
-                errors.append(ErrorDetail(path_prefix, err_msg, value))
+                errors.append(ErrorDetail(path_prefix, err_msg, err_val))
                 return value
-            raise ValidationError(err_msg, path_prefix, value)
+            raise ValidationError(err_msg, path_prefix, err_val)
 
     # 3. Dict schemas
     if isinstance(schema, dict):
@@ -406,35 +407,46 @@ def validate_internal(
                 is_optional = True
 
             if key not in input_dict:
-                if sub_base is not None:
-                    # base 引数が優先
-                    result[key] = sub_base
-                    continue
+                env_val = None
+                if isinstance(sub_schema, Validator) and getattr(sub_schema, "_env_key", None):
+                    import os
+                    env_val = os.environ.get(sub_schema._env_key)
 
-                # .default() が設定されている場合はデフォルト値を補完
-                if isinstance(sub_schema, Validator) and sub_schema._has_default:
-                    result[key] = sub_schema._default_value
-                    continue
-                
-                # Check condition for requirement
-                if isinstance(sub_schema, Validator) and sub_schema._when_condition:
-                    if not sub_schema._when_condition(root_data):
-                        # Condition not met, not required
-                        continue
-
-                if is_optional or partial:
-                    # Skip or keep as None
-                    if is_optional and sub_base is not None:
-                        result[key] = sub_base
-                    continue
+                if env_val is not None:
+                    val = env_val
                 else:
-                    err_msg = "Missing required key"
-                    if collect_errors and errors is not None:
-                        errors.append(ErrorDetail(current_path, err_msg, None))
+                    if sub_base is not None:
+                        # base 引数が優先
+                        result[key] = sub_base
                         continue
-                    raise ValidationError(err_msg, current_path, None)
+
+                    # .default() が設定されている場合はデフォルト値を補完
+                    if isinstance(sub_schema, Validator) and sub_schema._has_default:
+                        result[key] = sub_schema._default_value
+                        continue
+                    
+                    # Check condition for requirement
+                    if isinstance(sub_schema, Validator) and sub_schema._when_condition:
+                        if not sub_schema._when_condition(root_data):
+                            # Condition not met, not required
+                            continue
+
+                    if is_optional or partial:
+                        # Skip or keep as None
+                        if is_optional and sub_base is not None:
+                            result[key] = sub_base
+                        continue
+                    else:
+                        err_msg = "Missing required key"
+                        if isinstance(sub_schema, Validator) and sub_schema._custom_error_msg:
+                            err_msg = sub_schema._custom_error_msg
+                        err_val = "***" if isinstance(sub_schema, Validator) and sub_schema._secret_val else None
+                        if collect_errors and errors is not None:
+                            errors.append(ErrorDetail(current_path, err_msg, err_val))
+                            continue
+                        raise ValidationError(err_msg, current_path, err_val)
             
-            # Key exists in input
+            # Key exists in input or was found in env_val
             try:
                 result[key] = validate_internal(
                     val, sub_schema, root_data, current_path, 

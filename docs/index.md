@@ -219,17 +219,22 @@ schema = v.auto_infer(
 - `v.ip()`: IP アドレス (IPv4/IPv6) を検証。
 - `v.snowflake()`: Discord Snowflake ID を検証。
 - `v.version()`: Semantic Versioning 形式を検証。
+- `v.url()`: URL フォーマットを検証。プロトコルやドメイン、パス等を制限可能。
 
-### コンテナ型バリデータ
+### コンテナ型・高度なバリデータ
 - `v.list(item_schema)`: 各要素が `item_schema` に適合するリストであることを検証。
 - `v.dict(key_type, value_schema)`: キーが `key_type` であり、値が `value_schema` に適合する辞書であることを検証。
 - `v.oneof(choices)`: 値が `choices` リストのいずれかであることを検証。
 - `v.instance(type_cls)`: 任意クラスに対する `isinstance` チェックを行います。
+- `v.enum(enum_cls)`: Python の `enum.Enum` またはそのサブクラスに対する検証。`.coerce()` で文字列から自動変換。
 
 ### 修飾メソッド（チェーンメソッド）
 すべてのバリデータで使用可能なメソッド：
 - `.optional()`: フィールドを任意（省略可能）にします。
 - `.default(value)`: フィールドが欠損している場合のデフォルト値を設定します。設定すると自動的に `.optional()` となります。
+- `.env(key)`: フィールドが欠損した場合に、環境変数 (例: `os.environ[key]`) から自動で取得・補完します。
+- `.secret()`: バリデーションエラーが起きた際、元の入力値をエラーメッセージからマスク (`***`) します。
+- `.error_msg(msg)`: このバリデーションに失敗した際に、デフォルトではなく独自の日本語などのエラーメッセージに上書きします。
 - `.examples(list)`: 具体的な値の例をリストで保持します（サンプル生成等に使用）。
 - `.description(text)`: フィールドの説明文を保持します。
 - `.custom(func)`: 独自の検証・変換関数を適用します。関数は値を返し、エラー時は例外（`ValueError`, `TypeError`）を投げる必要があります。
@@ -244,6 +249,7 @@ schema = v.auto_infer(
 - `.version(n)`: (uuid限定) UUID のバージョンを検証。
 - `.v4_only()` / `.v6_only()`: (ip限定) IPv4 または IPv6 に限定。
 - `.length(n)` / `.hex()`: (hwid限定) 長さ指定や 16 進数制限。
+- `.schemes()` / `.domains()` / `.subdomains()` / `.paths()` / `.query_keys()`: (url限定) それぞれ対応する URL コンポーネントの制限。リストで渡します。
 
 ---
 

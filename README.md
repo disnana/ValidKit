@@ -46,6 +46,8 @@ ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キー
 ## 最近のアップデート
 
 - **v1.3.0**
+  - セキュリティと開発体験を向上させる修飾メソッド（`.secret()`, `.env()`, `.error_msg()`）をすべてのバリデータに追加。
+  - 新たなバリデータとして `v.url()`（プロトコルやドメイン等の制限付き）と `v.enum()`（文字列からの自動変換付き）を追加。
   - ライセンス認証システム向けの高度なバリデータ群（`v.datetime()`, `v.uuid()`, `v.mac()`, `v.sid()`, `v.hwid()`, `v.ip()`, `v.snowflake()`, `v.version()`）を追加。
   - `v.datetime()` でタイムゾーン付き（aware）と無し（naive）が混在した場合の比較不具合を修正。
 - **v1.2.3**
@@ -131,9 +133,18 @@ except ValidationError as e:
 * `v.ip()`: IP アドレス (IPv4/IPv6)
 * `v.snowflake()`: Discord Snowflake
 * `v.version()`: Semantic Versioning
+* `v.url()`: URL フォーマット (プロトコル・ドメイン制限対応)
 * `v.list(schema)`: リスト（要素のスキーマを指定）
 * `v.dict(key_type, value_schema)`: 辞書
 * `v.instance(type_cls)`: 任意のクラスの isinstance チェック
+* `v.enum(enum_cls)`: Enum 型 (文字列からの自動変換対応)
+
+#### 修飾メソッド (全バリデータ共通)
+* `.optional()`: 省略可能にする
+* `.default(value)`: 欠損時のデフォルト値を設定する
+* `.env(key)`: 欠損時に環境変数から取得する
+* `.secret()`: バリデーションエラー時に元の値をマスク (`***`) する
+* `.error_msg(msg)`: エラーメッセージを独自文字に上書きする
 
 ### 修飾メソッド
 * `.optional()`: 必須でないフィールドにする

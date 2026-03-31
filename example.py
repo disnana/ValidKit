@@ -500,3 +500,76 @@ assert isinstance(res_other["allowed_ip"], ipaddress.IPv4Address)
 assert isinstance(res_other["discord_user_id"], int)
 
 header("v1.3.0 の全デモが正常に終了しました。")
+
+# ==========================================
+# 6. セキュリティ＆開発体験向上機能 (Secret, Env, URL, Enum)
+# ==========================================
+header("6. セキュリティ＆開発体験向上機能")
+
+from enum import Enum
+import os
+
+class Role(Enum):
+    ADMIN = "admin"
+    USER = "user"
+
+# --- 6.1 .secret() / .error_msg() ---
+print("[6.1 .secret() と .error_msg() — 機密情報とカスタムエラー]")
+SEC_SCHEMA = {
+    "password": v.str().min(8).secret().error_msg("パスワードは8文字以上にしてください"),
+}
+
+try:
+    validate({"password": "short"}, SEC_SCHEMA)
+except ValidationError as e:
+    log_success(f"エラーメッセージの変更と値のマスクを確認: {e.message} (value: {e.value})")
+    assert e.value == "***"
+
+# --- 6.2 .env() ---
+print("\n[6.2 .env() — 環境変数からの自動フォールバック]")
+ENV_SCHEMA = {
+    "api_key": v.str().env("MY_API_KEY"),
+}
+
+# 1. 入力がある場合は環境変数を無視
+res_input = validate({"api_key": "input_val"}, ENV_SCHEMA)
+log_success(f"入力値優先: {res_input['api_key']}")
+
+# 2. 入力が欠損している場合は環境変数から取得
+os.environ["MY_API_KEY"] = "env_secret_key"
+res_env = validate({}, ENV_SCHEMA)
+log_success(f"環境変数から取得: {res_env['api_key']}")
+
+# --- 6.3 v.url() ---
+print("\n[6.3 v.url() — URL フォーマット検証と制約]")
+URL_SCHEMA = {
+    "webhook": v.url().schemes(["https"]).domains(["discord.com"]).paths(["/api/webhooks"]),
+    "profile_url": v.url().subdomains(["app"]).query_keys(["user_id"])
+}
+
+url_data = {
+    "webhook": "https://discord.com/api/webhooks?token=abc",
+    "profile_url": "https://app.example.com/view?user_id=123"
+}
+res_url = validate(url_data, URL_SCHEMA)
+log_success(f"URLバリデーション成功: \n  - webhook: {res_url['webhook']}\n  - profile: {res_url['profile_url']}")
+
+# ドメインエラーの確認
+try:
+    validate({"webhook": "https://evil.local/api/webhooks", "profile_url": "https://app.example.com/view?user_id=123"}, URL_SCHEMA)
+except ValidationError as e:
+    log_success(f"期待通りのエラー (ドメイン不一致): {e.message}")
+
+# --- 6.4 v.enum() ---
+print("\n[6.4 v.enum() — Enum 自動変換]")
+ENUM_SCHEMA = {
+    "role": v.enum(Role).coerce().default(Role.USER)
+}
+
+res_enum1 = validate({"role": "admin"}, ENUM_SCHEMA)
+log_success(f"文字列からの自動変換成功: {res_enum1['role']} (type: {type(res_enum1['role']).__name__})")
+
+res_enum2 = validate({}, ENUM_SCHEMA)
+log_success(f"デフォルト値適用成功: {res_enum2['role']}")
+
+header("すべてのデモが正常に終了しました。")

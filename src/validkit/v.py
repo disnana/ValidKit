@@ -4,6 +4,8 @@ import datetime as dt_module
 import uuid as uuid_module
 import ipaddress
 from typing import Any, Callable, Dict, List, Union, Type, Optional, cast
+import urllib.parse
+from enum import Enum
 
 class Validator:
     """
@@ -23,6 +25,24 @@ class Validator:
         self._default_value: Any = None
         self._examples: List[Any] = []
         self._description: Optional[str] = None
+        self._secret_val = False
+        self._env_key: Optional[str] = None
+        self._custom_error_msg: Optional[str] = None
+
+    def secret(self) -> "Validator":
+        """エラー時に値をマスク (***) します。"""
+        self._secret_val = True
+        return self
+
+    def env(self, env_key: str) -> "Validator":
+        """データが欠損している場合、指定した環境変数から値を取得します。"""
+        self._env_key = env_key
+        return self
+
+    def error_msg(self, msg: str) -> "Validator":
+        """デフォルトのエラーメッセージを上書きします。"""
+        self._custom_error_msg = msg
+        return self
 
     def coerce(self) -> "Validator":
         """入力値を対象型に自動変換します (例: str "123" -> int 123)。"""
@@ -522,6 +542,98 @@ class VersionValidator(Validator):
             raise ValueError(f"Invalid Semantic Versioning format: {value}")
         return cast(str, self._validate_base(value, data))
 
+class URLValidator(Validator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._allowed_schemes: Optional[List[str]] = None
+        self._allowed_domains: Optional[List[str]] = None
+        self._allowed_subdomains: Optional[List[str]] = None
+        self._require_query_keys: Optional[List[str]] = None
+        self._allowed_paths: Optional[List[str]] = None
+
+    def schemes(self, schemes: List[str]) -> "URLValidator":
+        self._allowed_schemes = schemes
+        return self
+
+    def domains(self, domains: List[str]) -> "URLValidator":
+        self._allowed_domains = domains
+        return self
+        
+    def subdomains(self, subdomains: List[str]) -> "URLValidator":
+        self._allowed_subdomains = subdomains
+        return self
+
+    def paths(self, paths: List[str]) -> "URLValidator":
+        self._allowed_paths = paths
+        return self
+
+    def query_keys(self, keys: List[str]) -> "URLValidator":
+        self._require_query_keys = keys
+        return self
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected str for URL, got {type(value).__name__}")
+        
+        try:
+            parsed = urllib.parse.urlparse(value)
+            
+            if not parsed.scheme or not parsed.netloc:
+                raise ValueError("Incomplete URL format.")
+                
+            if self._allowed_schemes and parsed.scheme not in self._allowed_schemes:
+                raise ValueError(f"URL scheme '{parsed.scheme}' is not allowed.")
+                
+            if self._allowed_domains:
+                domain_parts = parsed.netloc.split(':')
+                host = domain_parts[0]
+                matched_domain = any(host == d or host.endswith('.' + d) for d in self._allowed_domains)
+                if not matched_domain:
+                    raise ValueError(f"URL domain '{host}' is not allowed.")
+                    
+            if self._allowed_subdomains:
+                host = parsed.netloc.split(':')[0]
+                matched_sub = any(host.startswith(sub + '.') for sub in self._allowed_subdomains)
+                if not matched_sub:
+                    raise ValueError(f"URL subdomain for '{host}' is not allowed.")
+
+            if self._allowed_paths:
+                if parsed.path not in self._allowed_paths:
+                    raise ValueError(f"URL path '{parsed.path}' is not allowed.")
+                    
+            if self._require_query_keys:
+                query_params = urllib.parse.parse_qs(parsed.query)
+                for req_key in self._require_query_keys:
+                    if req_key not in query_params:
+                        raise ValueError(f"URL missing required query parameter '{req_key}'.")
+
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            raise ValueError(f"Invalid URL string: {value}")
+            
+        return self._validate_base(value, data)
+
+class EnumValidator(Validator):
+    def __init__(self, enum_cls: Type[Enum]) -> None:
+        super().__init__()
+        self._enum_cls = enum_cls
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if self._coerce:
+            try:
+                value = self._enum_cls(value)
+            except ValueError:
+                try:
+                    value = self._enum_cls[str(value)]
+                except KeyError:
+                    pass
+
+        if not isinstance(value, self._enum_cls):
+            raise TypeError(f"Expected {self._enum_cls.__name__}, got {type(value).__name__}")
+            
+        return self._validate_base(value, data)
+
 class VBuilder:
     def str(self) -> StringValidator:
         return StringValidator()
@@ -581,6 +693,12 @@ class VBuilder:
 
     def version(self) -> VersionValidator:
         return VersionValidator()
+
+    def url(self) -> URLValidator:
+        return URLValidator()
+
+    def enum(self, enum_cls: Type[Enum]) -> EnumValidator:
+        return EnumValidator(enum_cls)
     @staticmethod
     def auto_infer(
         data: Any,
