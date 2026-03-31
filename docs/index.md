@@ -211,6 +211,14 @@ schema = v.auto_infer(
 - `v.int()`: 整数であることを検証。
 - `v.float()`: 浮動小数点数であることを検証。
 - `v.bool()`: 真偽値であることを検証。
+- `v.datetime()`: 日時 (`datetime.datetime` / `datetime.date`) を検証。
+- `v.uuid()`: UUID 形式を検証。
+- `v.mac()`: MAC アドレス形式を検証。
+- `v.sid()`: Windows SID 形式を検証。
+- `v.hwid()`: 汎用ハードウェア ID を検証。
+- `v.ip()`: IP アドレス (IPv4/IPv6) を検証。
+- `v.snowflake()`: Discord Snowflake ID を検証。
+- `v.version()`: Semantic Versioning 形式を検証。
 
 ### コンテナ型バリデータ
 - `v.list(item_schema)`: 各要素が `item_schema` に適合するリストであることを検証。
@@ -229,8 +237,13 @@ schema = v.auto_infer(
 
 型固有のメソッド：
 - `.regex(pattern)`: (str限定) 正規表現にマッチするか検証。
-- `.range(min, max)`: (int/float/str限定) 値または文字列の実長が範囲内にあるか検証。`min <= max` が必須で、不正な境界は定義時に `ValueError` になります。
-- `.min(val)` / `.max(val)`: (int/float/str限定) 最小値/最大値または文字列の最小長/最大長を検証。既存の反対側境界と矛盾する値は設定できません。
+- `.range(min, max)`: (int/float/str限定) 値または文字列の実長が範囲内にあるか検証。
+- `.min(val)` / `.max(val)`: (int/float/str限定) 最小値/最大値または文字列の最小長/最大長を検証。
+- `.after(dt)` / `.before(dt)`: (datetime限定) 指定日時より後か前か検証。
+- `.after_now()` / `.before_now()`: (datetime限定) 現在時刻より後か前か検証。
+- `.version(n)`: (uuid限定) UUID のバージョンを検証。
+- `.v4_only()` / `.v6_only()`: (ip限定) IPv4 または IPv6 に限定。
+- `.length(n)` / `.hex()`: (hwid限定) 長さ指定や 16 進数制限。
 
 ---
 

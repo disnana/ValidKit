@@ -2,6 +2,7 @@ import sys
 import os
 from typing import Dict, List, Optional, TypedDict
 import io
+import ipaddress
 
 # Handle UTF-8 output on Windows
 if sys.platform == "win32":
@@ -432,3 +433,70 @@ assert "age" not in partial_result
 log_success(f"partial=True: 欠損フィールドを許容: {partial_result}")
 
 header("クラス記法スキーマのデモが正常に終了しました。")
+
+# ==========================================
+# 5. v1.3.0 新機能: ライセンス認証向けバリデータ
+# ==========================================
+header("5. v1.3.0 新機能 (ライセンス認証向けバリデータ)")
+
+from datetime import datetime, timedelta
+
+# --- 5.1 v.datetime() ---
+print("[5.1 v.datetime() — 有効期限チェック]")
+now = datetime.now()
+LICENSE_SCHEMA = {
+    "expiry": v.datetime().after_now().description("有効期限"),
+    "issued_at": v.datetime().before(now).description("発行日")
+}
+
+# 正常系: 有効期限が未来、発行日が過去
+valid_license = {
+    "expiry": now + timedelta(days=365),
+    "issued_at": now - timedelta(days=1)
+}
+res_dt = validate(valid_license, LICENSE_SCHEMA)
+log_success(f"日付バリデーション成功: {res_dt}")
+
+# --- 5.2 v.uuid() / v.mac() / v.sid() ---
+print("\n[5.2 v.uuid() / v.mac() / v.sid() — 識別子チェック]")
+IDENTIFIER_SCHEMA = {
+    "key": v.uuid().version(4),
+    "mac_address": v.mac(),
+    "computer_sid": v.sid()
+}
+
+ident_data = {
+    "key": "550e8400-e29b-41d4-a716-446655440000", # 固定値だが形式はOK
+    "mac_address": "00:11:22:33:44:55",
+    "computer_sid": "S-1-5-21-3623811015-3361044348-30300820-1013"
+}
+# UUID は version(4) を指定しているため、上記固定値（version 4ではない）はエラーになるはず
+try:
+    validate(ident_data, IDENTIFIER_SCHEMA)
+except ValidationError as e:
+    log_success(f"期待通りのエラー (UUID version 不一致): {e.message}")
+
+# 正しい UUID v4 を使用
+ident_data["key"] = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+res_ident = validate(ident_data, IDENTIFIER_SCHEMA)
+log_success(f"識別子バリデーション成功: {res_ident}")
+
+# --- 5.3 v.ip() / v.snowflake() / v.version() ---
+print("\n[5.3 v.ip() / v.snowflake() / v.version() — その他]")
+OTHER_SCHEMA = {
+    "allowed_ip": v.ip().v4_only().coerce(),
+    "discord_user_id": v.snowflake().coerce(),
+    "app_version": v.version()
+}
+
+other_data = {
+    "allowed_ip": "127.0.0.1",
+    "discord_user_id": "123456789012345678",
+    "app_version": "1.5.0-beta.1"
+}
+res_other = validate(other_data, OTHER_SCHEMA)
+log_success(f"IP/Snowflake/Version バリデーション成功: {res_other}")
+assert isinstance(res_other["allowed_ip"], ipaddress.IPv4Address)
+assert isinstance(res_other["discord_user_id"], int)
+
+header("v1.3.0 の全デモが正常に終了しました。")

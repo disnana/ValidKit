@@ -45,7 +45,10 @@ ValidKit は、<strong>「直感的なスキーマ定義」と「日本語キー
 
 ## 最近のアップデート
 
-- **v1.2.1**
+- **v1.3.0**
+  - ライセンス認証システム向けの高度なバリデータ群（`v.datetime()`, `v.uuid()`, `v.mac()`, `v.sid()`, `v.hwid()`, `v.ip()`, `v.snowflake()`, `v.version()`）を追加。
+  - `v.datetime()` でタイムゾーン付き（aware）と無し（naive）が混在した場合の比較不具合を修正。
+- **v1.2.3**
   - `v.auto_infer(data, type_map=None, schema_overrides=None)` を追加
   - `Schema.generate_sample()` の安全性を改善し、制約を満たせない候補は `ValueError` を返すように修正
   - `.range()` / `.min()` / `.max()` の境界矛盾を定義時に検出するよう改善
@@ -121,9 +124,13 @@ except ValidationError as e:
 詳細なリファレンスは [`docs/index.md`](docs/index.md)、版ごとの変更点は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
 ### 基本バリデータ
-* `v.str()`: 文字列
-* `v.int()` / `v.float()`: 数値
 * `v.bool()`: 真偽値
+* `v.datetime()`: 日時 (期限チェック対応)
+* `v.uuid()`: UUID (バージョン検証対応)
+* `v.mac()` / `v.sid()` / `v.hwid()`: 識別子・ハードウェア ID
+* `v.ip()`: IP アドレス (IPv4/IPv6)
+* `v.snowflake()`: Discord Snowflake
+* `v.version()`: Semantic Versioning
 * `v.list(schema)`: リスト（要素のスキーマを指定）
 * `v.dict(key_type, value_schema)`: 辞書
 * `v.instance(type_cls)`: 任意のクラスの isinstance チェック

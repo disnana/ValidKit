@@ -1,5 +1,8 @@
 import re
 import builtins
+import datetime as dt_module
+import uuid as uuid_module
+import ipaddress
 from typing import Any, Callable, Dict, List, Union, Type, Optional, cast
 
 class Validator:
@@ -308,6 +311,217 @@ class InstanceValidator(Validator):
                 )
         return self._validate_base(value, data)
 
+class DateTimeValidator(Validator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._after: Optional[dt_module.datetime] = None
+        self._before: Optional[dt_module.datetime] = None
+        self._after_now = False
+        self._before_now = False
+
+    def after(self, value: Union[dt_module.datetime, dt_module.date]) -> "DateTimeValidator":
+        if isinstance(value, dt_module.date) and not isinstance(value, dt_module.datetime):
+            value = dt_module.datetime.combine(value, dt_module.time.min)
+        self._after = value
+        return self
+
+    def before(self, value: Union[dt_module.datetime, dt_module.date]) -> "DateTimeValidator":
+        if isinstance(value, dt_module.date) and not isinstance(value, dt_module.datetime):
+            value = dt_module.datetime.combine(value, dt_module.time.max)
+        self._before = value
+        return self
+
+    def after_now(self) -> "DateTimeValidator":
+        self._after_now = True
+        return self
+
+    def before_now(self) -> "DateTimeValidator":
+        self._before_now = True
+        return self
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if self._coerce and isinstance(value, str):
+            try:
+                value = dt_module.datetime.fromisoformat(value)
+            except ValueError:
+                pass
+
+        if not isinstance(value, (dt_module.datetime, dt_module.date)):
+            raise TypeError(f"Expected datetime or date, got {type(value).__name__}")
+        
+        check_val = value
+        if isinstance(value, dt_module.date) and not isinstance(value, dt_module.datetime):
+            check_val = dt_module.datetime.combine(value, dt_module.time.min)
+        
+        # タイムゾーン対応: どちらか一方が aware の場合、比較対象も合わせる
+        now = dt_module.datetime.now(check_val.tzinfo if isinstance(check_val, dt_module.datetime) and check_val.tzinfo else None)
+        
+        def _get_cmp_val(val: Union[dt_module.datetime, dt_module.date], reference: dt_module.datetime) -> dt_module.datetime:
+            if isinstance(val, dt_module.date) and not isinstance(val, dt_module.datetime):
+                val = dt_module.datetime.combine(val, dt_module.time.min)
+            if reference.tzinfo and not val.tzinfo:
+                return val.replace(tzinfo=reference.tzinfo)
+            if not reference.tzinfo and val.tzinfo:
+                return val.replace(tzinfo=None)
+            return cast(dt_module.datetime, val)
+
+        if self._after_now and check_val <= now:
+            raise ValueError(f"Datetime {value} must be after now ({now})")
+        if self._before_now and check_val >= now:
+            raise ValueError(f"Datetime {value} must be before now ({now})")
+        
+        if self._after:
+            cmp_after = _get_cmp_val(self._after, check_val)
+            if check_val <= cmp_after:
+                raise ValueError(f"Datetime {value} must be after {self._after}")
+        if self._before:
+            cmp_before = _get_cmp_val(self._before, check_val)
+            if check_val >= cmp_before:
+                raise ValueError(f"Datetime {value} must be before {self._before}")
+            
+        return self._validate_base(value, data)
+
+class UUIDValidator(Validator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._version: Optional[int] = None
+
+    def version(self, v: int) -> "UUIDValidator":
+        self._version = v
+        return self
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if self._coerce and isinstance(value, str):
+            try:
+                value = uuid_module.UUID(value)
+            except ValueError:
+                pass
+
+        if isinstance(value, str):
+            try:
+                u = uuid_module.UUID(value)
+                if self._version and u.version != self._version:
+                    raise ValueError(f"UUID version must be {self._version}, got {u.version}")
+                return self._validate_base(value, data)
+            except ValueError:
+                raise ValueError(f"Invalid UUID string: {value}")
+        elif isinstance(value, uuid_module.UUID):
+            if self._version and value.version != self._version:
+                raise ValueError(f"UUID version must be {self._version}, got {value.version}")
+            return self._validate_base(value, data)
+        else:
+            raise TypeError(f"Expected UUID string or instance, got {type(value).__name__}")
+
+class MACValidator(Validator):
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected str for MAC address, got {type(value).__name__}")
+        
+        pattern = r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+        if not re.match(pattern, value):
+            raise ValueError(f"Invalid MAC address format: {value}")
+        return cast(str, self._validate_base(value, data))
+
+class SIDValidator(Validator):
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected str for SID, got {type(value).__name__}")
+        
+        # S-1-[0-5]-(?:\d+-){1,14}\d+
+        pattern = r"^S-\d+-(?:\d+-){1,14}\d+$"
+        if not re.match(pattern, value):
+            raise ValueError(f"Invalid Windows SID format: {value}")
+        return cast(str, self._validate_base(value, data))
+
+class HWIDValidator(Validator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._length: Optional[int] = None
+        self._hex_only = False
+
+    def length(self, n: int) -> "HWIDValidator":
+        self._length = n
+        return self
+
+    def hex(self) -> "HWIDValidator":
+        self._hex_only = True
+        return self
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected str for HWID, got {type(value).__name__}")
+        
+        if self._length and len(value) != self._length:
+            raise ValueError(f"HWID length must be {self._length}, got {len(value)}")
+        
+        if self._hex_only and not re.match(r"^[0-9A-Fa-f]+$", value):
+            raise ValueError(f"HWID must be a hex string: {value}")
+            
+        return cast(str, self._validate_base(value, data))
+
+class IPValidator(Validator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._v4_only = False
+        self._v6_only = False
+
+    def v4_only(self) -> "IPValidator":
+        self._v4_only = True
+        return self
+
+    def v6_only(self) -> "IPValidator":
+        self._v6_only = True
+        return self
+
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Any:
+        if self._coerce and isinstance(value, str):
+            try:
+                value = ipaddress.ip_address(value)
+            except ValueError:
+                pass
+
+        try:
+            val_to_check = str(value) if not isinstance(value, (ipaddress.IPv4Address, ipaddress.IPv6Address)) else value
+            ip = ipaddress.ip_address(val_to_check)
+            if self._v4_only and ip.version != 4:
+                raise ValueError(f"IP address must be IPv4, got IPv{ip.version} ({value})")
+            if self._v6_only and ip.version != 6:
+                raise ValueError(f"IP address must be IPv6, got IPv{ip.version} ({value})")
+            return self._validate_base(value, data)
+        except ValueError as e:
+            raise ValueError(f"Invalid IP address '{value}': {e}")
+
+class SnowflakeValidator(Validator):
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Union[str, int]:
+        if self._coerce and isinstance(value, str) and value.isdigit():
+            value = int(value)
+
+        # Discord Snowflake は 64bit 正の整数 (17〜20桁程度の数値または文字列)
+        if isinstance(value, int):
+            if value < 0 or value > (2**64 - 1):
+                raise ValueError(f"Invalid Snowflake (out of 64-bit range): {value}")
+        elif isinstance(value, str):
+            if not value.isdigit():
+                raise ValueError(f"Snowflake string must contains only digits: {value}")
+            val_int = int(value)
+            if val_int < 0 or val_int > (2**64 - 1):
+                raise ValueError(f"Invalid Snowflake (out of 64-bit range): {value}")
+        else:
+            raise TypeError(f"Expected int or str for Snowflake, got {type(value).__name__}")
+            
+        return cast(Union[str, int], self._validate_base(value, data))
+
+class VersionValidator(Validator):
+    def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"Expected str for version, got {type(value).__name__}")
+        
+        # Simple SemVer regex
+        pattern = r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+        if not re.match(pattern, value):
+            raise ValueError(f"Invalid Semantic Versioning format: {value}")
+        return cast(str, self._validate_base(value, data))
+
 class VBuilder:
     def str(self) -> StringValidator:
         return StringValidator()
@@ -343,6 +557,30 @@ class VBuilder:
             validate({"ts": datetime.datetime.now()}, schema)
         """
         return InstanceValidator(type_cls)
+
+    def datetime(self) -> DateTimeValidator:
+        return DateTimeValidator()
+
+    def uuid(self) -> UUIDValidator:
+        return UUIDValidator()
+
+    def mac(self) -> MACValidator:
+        return MACValidator()
+
+    def sid(self) -> SIDValidator:
+        return SIDValidator()
+
+    def hwid(self) -> HWIDValidator:
+        return HWIDValidator()
+
+    def ip(self) -> IPValidator:
+        return IPValidator()
+
+    def snowflake(self) -> SnowflakeValidator:
+        return SnowflakeValidator()
+
+    def version(self) -> VersionValidator:
+        return VersionValidator()
     @staticmethod
     def auto_infer(
         data: Any,
