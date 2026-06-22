@@ -200,24 +200,42 @@ class NumberValidator(Validator):
         self._type_cls = type_cls
         self._min: Optional[float] = None
         self._max: Optional[float] = None
+        self._exclusive_min = False
+        self._exclusive_max = False
 
-    def range(self, min_val: float, max_val: float) -> "NumberValidator":
+    def range(
+        self,
+        min_val: float,
+        max_val: float,
+        exclusive_min: bool = False,
+        exclusive_max: bool = False,
+    ) -> "NumberValidator":
         if min_val > max_val:
             raise ValueError(f"Invalid range: minimum {min_val} cannot be greater than maximum {max_val}")
+        if min_val == max_val and (exclusive_min or exclusive_max):
+            raise ValueError("Invalid range: equal bounds cannot be exclusive")
         self._min = min_val
         self._max = max_val
+        self._exclusive_min = exclusive_min
+        self._exclusive_max = exclusive_max
         return self
 
-    def min(self, min_val: float) -> "NumberValidator":
+    def min(self, min_val: float, exclusive: bool = False) -> "NumberValidator":
         if self._max is not None and min_val > self._max:
             raise ValueError(f"Invalid range: minimum {min_val} cannot be greater than maximum {self._max}")
+        if self._max is not None and min_val == self._max and (exclusive or self._exclusive_max):
+            raise ValueError("Invalid range: equal bounds cannot be exclusive")
         self._min = min_val
+        self._exclusive_min = exclusive
         return self
 
-    def max(self, max_val: float) -> "NumberValidator":
+    def max(self, max_val: float, exclusive: bool = False) -> "NumberValidator":
         if self._min is not None and self._min > max_val:
             raise ValueError(f"Invalid range: minimum {self._min} cannot be greater than maximum {max_val}")
+        if self._min is not None and self._min == max_val and (self._exclusive_min or exclusive):
+            raise ValueError("Invalid range: equal bounds cannot be exclusive")
         self._max = max_val
+        self._exclusive_max = exclusive
         return self
 
     def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> Union[int, float]:
@@ -228,10 +246,20 @@ class NumberValidator(Validator):
                 pass
         if not isinstance(value, self._type_cls):
             raise TypeError(f"Expected {self._type_cls.__name__}, got {type(value).__name__}")
-        if self._min is not None and value < self._min:
-            raise ValueError(f"Value {value} is less than minimum {self._min}")
-        if self._max is not None and value > self._max:
-            raise ValueError(f"Value {value} is greater than maximum {self._max}")
+        if self._min is not None:
+            if self._exclusive_min:
+                if value <= self._min:
+                    raise ValueError(f"Value {value} must be greater than {self._min}")
+            else:
+                if value < self._min:
+                    raise ValueError(f"Value {value} is less than minimum {self._min}")
+        if self._max is not None:
+            if self._exclusive_max:
+                if value >= self._max:
+                    raise ValueError(f"Value {value} must be less than {self._max}")
+            else:
+                if value > self._max:
+                    raise ValueError(f"Value {value} is greater than maximum {self._max}")
         return cast(Union[int, float], self._validate_base(value, data))
 
 class BoolValidator(Validator):
@@ -257,10 +285,40 @@ class ListValidator(Validator):
     def __init__(self, item_validator: Union[Validator, Dict[builtins.str, Any], Type[Any]]) -> None:
         super().__init__()
         self._item_validator = item_validator
+        self._min_len: Optional[int] = None
+        self._max_len: Optional[int] = None
+
+    def min(self, min_length: int) -> "ListValidator":
+        if min_length < 0:
+            raise ValueError(f"Invalid range: minimum length {min_length} cannot be negative")
+        if self._max_len is not None and min_length > self._max_len:
+            raise ValueError(f"Invalid range: minimum length {min_length} cannot be greater than maximum length {self._max_len}")
+        self._min_len = min_length
+        return self
+
+    def max(self, max_length: int) -> "ListValidator":
+        if max_length < 0:
+            raise ValueError(f"Invalid range: maximum length {max_length} cannot be negative")
+        if self._min_len is not None and self._min_len > max_length:
+            raise ValueError(f"Invalid range: minimum length {self._min_len} cannot be greater than maximum length {max_length}")
+        self._max_len = max_length
+        return self
+
+    def length(self, n: int) -> "ListValidator":
+        if n < 0:
+            raise ValueError(f"Invalid length: {n} cannot be negative")
+        self._min_len = n
+        self._max_len = n
+        return self
 
     def validate(self, value: Any, data: Optional[Dict[str, Any]] = None, path_prefix: str = "", collect_errors: bool = False, errors: Optional[List[Any]] = None) -> List[Any]:
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"Expected list, got {type(value).__name__}")
+        if self._min_len is not None and len(value) < self._min_len:
+            raise ValueError(f"List length {len(value)} is shorter than minimum length {self._min_len}")
+        if self._max_len is not None and len(value) > self._max_len:
+            raise ValueError(f"List length {len(value)} is longer than maximum length {self._max_len}")
+
         from .validator import validate_internal
         result = []
         root_data = data if data is not None else {}

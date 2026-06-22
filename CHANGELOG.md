@@ -6,6 +6,22 @@
 - `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
 - 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
+## [1.3.1dev1] - 2026-06-22
+
+### Added
+- `v.list(...)` に `.min(length)` / `.max(length)` / `.length(length)` を追加し、要素数を検証できるようにしました。
+- 数値バリデータの `.min()` / `.max()` に `exclusive=True`、`.range()` に `exclusive_min=True` / `exclusive_max=True` を追加しました。
+- dataclass と `NamedTuple` をクラススキーマとして渡した場合、検証済みのインスタンスを返すようにしました。
+
+### Changed
+- `Schema.generate_sample()` がリストの最小要素数と数値の排他的境界を考慮して、有効なサンプルを生成するようになりました。
+- dataclass の `default_factory` を欠損値の補完に使用し、`init=False` フィールドは入力スキーマから除外するようにしました。
+- dataclass / `NamedTuple` の partial 検証は、必須コンストラクタ引数が不足し得るため従来どおり辞書を返します。
+
+### Fixed
+- 排他的な上下限が同値で、有効値が存在しない数値範囲を定義時に拒否するようにしました。
+- 新規コードに含まれていた末尾空白とスタイル上の問題を修正しました。
+
 ## [1.3.0dev2] - 2026-03-31
 
 ### Changed

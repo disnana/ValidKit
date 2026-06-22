@@ -152,7 +152,9 @@ except ValidationError as e:
 * `.examples(list)`: サンプル生成やドキュメント用の具体例を設定
 * `.description(str)`: フィールドの説明文を設定
 * `.regex(pattern)`: 正規表現チェック
-* `.range(min, max)` / `.min(val)` / `.max(val)`: 範囲または文字列長チェック（`min <= max` が必須。不正な境界は定義時に `ValueError`）
+* 数値の `.range(min, max, exclusive_min=False, exclusive_max=False)` / `.min(val, exclusive=False)` / `.max(val, exclusive=False)`: 包含・排他的な範囲チェック（不正な境界は定義時に `ValueError`）
+* 文字列の `.range(min, max)` / `.min(val)` / `.max(val)`: 文字列長チェック
+* リストの `.min(length)` / `.max(length)` / `.length(length)`: 最小・最大・固定要素数チェック
 * `.custom(func)`: 独自の変換・検証ロジックを注入
 * `.coerce()`: 入力値の型を自動的に変換（例: `"123" -> 123`）
 

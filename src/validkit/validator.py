@@ -16,6 +16,7 @@ from typing import (
 from collections.abc import Mapping
 import types as _types
 import math
+import dataclasses
 from .v import (
     Validator,
     v,
@@ -314,6 +315,12 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
         if isinstance(attr, Validator):
             schema[key] = attr
 
+    dataclass_fields = (
+        {field.name: field for field in dataclasses.fields(cls)}
+        if dataclasses.is_dataclass(cls)
+        else {}
+    )
+
     # 2. Process type annotations (only those declared directly on this class, not inherited)
     annotations = _get_class_annotations(cls)
     for key, type_hint in annotations.items():
@@ -321,10 +328,25 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
             # Already have a Validator class attribute for this field — skip
             continue
 
+        dataclass_field = dataclass_fields.get(key)
+        if dataclass_field is not None and not dataclass_field.init:
+            # init=False fields are managed by the dataclass itself and cannot be
+            # supplied to its constructor.
+            continue
+
         # Check for a non-Validator class attribute that acts as default value
         has_default = False
         default_val: Any = None
-        if key in vars(cls) and not isinstance(vars(cls)[key], Validator):
+        if dataclass_field is not None and dataclass_field.default is not dataclasses.MISSING:
+            has_default = True
+            default_val = dataclass_field.default
+        elif (
+            dataclass_field is not None
+            and dataclass_field.default_factory is not dataclasses.MISSING
+        ):
+            has_default = True
+            default_val = dataclass_field.default_factory()
+        elif key in vars(cls) and not isinstance(vars(cls)[key], Validator):
             has_default = True
             default_val = vars(cls)[key]
 
@@ -514,9 +536,22 @@ def _generate_number_sample(schema: Any) -> Union[int, float]:
     if schema._type_cls is int:
         lower = math.ceil(schema._min) if schema._min is not None else None
         upper = math.floor(schema._max) if schema._max is not None else None
+        if lower is not None and schema._exclusive_min and lower <= schema._min:
+            lower += 1
+        if upper is not None and schema._exclusive_max and upper >= schema._max:
+            upper -= 1
     else:
         lower = float(schema._min) if schema._min is not None else None
         upper = float(schema._max) if schema._max is not None else None
+        if lower is not None and schema._exclusive_min:
+            lower = math.nextafter(lower, math.inf)
+        if upper is not None and schema._exclusive_max:
+            upper = math.nextafter(upper, -math.inf)
+
+    if lower is not None and upper is not None and lower > upper:
+        raise ValueError(
+            "generate_sample() could not produce a number inside the configured range"
+        )
 
     if lower is not None and zero < lower:
         return lower
@@ -568,7 +603,11 @@ def _generate_validator_sample(schema: Validator) -> Any:
     elif isinstance(schema, OneOfValidator):
         candidate = schema._choices[0] if schema._choices else None
     elif isinstance(schema, ListValidator):
-        candidate = [_generate_sample(schema._item_validator)]
+        item_count = schema._min_len if schema._min_len is not None else 1
+        candidate = [
+            _generate_sample(schema._item_validator)
+            for _ in range(item_count)
+        ]
     elif isinstance(schema, DictValidator):
         candidate = {"key": _generate_sample(schema._value_validator)}
     else:
@@ -661,7 +700,7 @@ def validate(
     migrate: Optional[Dict[str, Any]] = None,
     collect_errors: bool = False,
 ) -> Union[Any, "ValidationResult"]:
-    
+    schema_orig = schema
     # Unwrap Schema[T] to its underlying dict schema
     if isinstance(schema, Schema):
         schema = schema._schema
@@ -698,4 +737,18 @@ def validate(
 
     if collect_errors:
         return ValidationResult(validated_data, errors)
+    # 4. Convert to dataclass/NamedTuple if the original schema was a class and not just a dict.
+    # Partial validation intentionally returns a dict because required constructor
+    # arguments may be absent.
+    if (
+        not partial
+        and isinstance(schema_orig, type)
+        and _is_class_schema(schema_orig)
+        and isinstance(validated_data, dict)
+    ):
+        if dataclasses.is_dataclass(schema_orig):
+            return schema_orig(**validated_data)
+        if hasattr(schema_orig, "_make") and hasattr(schema_orig, "_fields"):
+            return schema_orig(**validated_data)
+
     return validated_data

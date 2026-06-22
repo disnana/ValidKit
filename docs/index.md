@@ -242,8 +242,10 @@ schema = v.auto_infer(
 
 型固有のメソッド：
 - `.regex(pattern)`: (str限定) 正規表現にマッチするか検証。
-- `.range(min, max)`: (int/float/str限定) 値または文字列の実長が範囲内にあるか検証。
-- `.min(val)` / `.max(val)`: (int/float/str限定) 最小値/最大値または文字列の最小長/最大長を検証。
+- `.range(min, max, exclusive_min=False, exclusive_max=False)`: (int/float) 値が範囲内にあるか検証。排他的境界も指定可能。
+- `.min(val, exclusive=False)` / `.max(val, exclusive=False)`: (int/float) 最小値/最大値を検証。`exclusive=True` で境界値を除外。
+- `.range(min, max)` / `.min(val)` / `.max(val)`: (str) 文字列の長さを検証。
+- `.min(length)` / `.max(length)` / `.length(length)`: (list) 要素数の最小・最大・固定長を検証。
 - `.after(dt)` / `.before(dt)`: (datetime限定) 指定日時より後か前か検証。
 - `.after_now()` / `.before_now()`: (datetime限定) 現在時刻より後か前か検証。
 - `.version(n)`: (uuid限定) UUID のバージョンを検証。
