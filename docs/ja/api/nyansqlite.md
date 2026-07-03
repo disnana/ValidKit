@@ -1,130 +1,81 @@
-﻿# NyanSQLite API リファレンス
-
-PydanticネイティブなSQLiteラッパー `NyanSQLite` クラスのドキュメントです。
-
-## クラス: `NyanSQLite`
-
-```python
-class NyanSQLite:
-    def __init__(self, path: str = ":memory:", wal: bool = True, strict_deserialization: bool = False)
-```
-
-### コンストラクタ
-
-- `path` (str): データベースファイルのパス。デフォルトはメモリ内データベース (`:memory:`)。
-- `wal` (bool): WAL (Write-Ahead Logging) モードを有効にするかどうか。デフォルトは `True`。
-- `strict_deserialization` (bool): `True` の場合、データ読み込み時のデシリアライズ失敗で例外を発生させます。`False`（デフォルト）の場合、警告を出して生データを返します。
-
+---
+outline: [2, 3]
 ---
 
-## 主要メソッド
+# API リファレンス
 
-### `register`
+ValidKit の公開 API と主要バリデータの一覧です。
+
+## Top-level functions
+
+### `validate`
+
 ```python
-def register(self, model: type[BaseModel]) -> None
+validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
 ```
-Pydanticモデルを登録し、対応するテーブル、インデックス、FTS5仮想テーブルを自動的に作成します。
 
-### `insert`
+データとスキーマを受け取り、検証済みデータを返します。`collect_errors=True` の場合は `ValidationResult` を返し、複数のエラーをまとめて確認できます。
+
+### `compile`
+
 ```python
-def insert(self, obj: BaseModel) -> None
+compile(schema: Any) -> validkit.compiled.CompiledSchema
 ```
-モデルのインスタンスをデータベースに挿入します。
 
-### `insert_many`
+スキーマを事前コンパイルし、繰り返し検証向けの `CompiledSchema` を返します。基本型・リスト・辞書・一部の組み込みバリデータは生成コードで高速化されます。
+
+### `Schema`
+
 ```python
-def insert_many(self, objs: list[BaseModel]) -> None
+Schema(schema: Any) -> None
 ```
-複数のモデルインスタンスを一括で挿入します。内部で自動的にトランザクションが使用され、大量のデータも高速に処理されます。
 
-### `query`
-```python
-def query(self, model: type[M], *filters: str, limit: Optional[int] = None, offset: Optional[int] = None, order_by: Optional[str] = None, desc: bool = False, **kwargs: Any) -> list[M]
-```
-Djangoライクなフィルタリングを使用してデータを検索し、モデルインスタンスのリストを返します。
+型補完を助ける薄いラッパーです。`Schema[T]` と `TypedDict` を組み合わせると IDE が戻り値の形を推論しやすくなります。
 
-- `filters`: `"age > 20"` のような文字列形式のフィルタ。v1.1.4dev1 以降は、安全のため明示的な単純比較のみサポートします。
-- `kwargs`: `name="Alice"`, `views__gte=100` のようなキーワード形式のフィルタ。
-- `limit` / `offset`: 取得件数と開始位置の制限。
-- `order_by`: ソート対象のフィールド名。
-- `desc`: `True` の場合、降順でソート。
+## Validator factories
 
-### `get`
-```python
-def get(self, model: type[M], *filters: str, **kwargs: Any) -> Optional[M]
-```
-条件に一致する最初の1件を取得します。見つからない場合は `None` を返します。
+| ファクトリ | クラス | 検証対象 |
+|---|---|---|
+| `v.str()` | `StringValidator` | 文字列 / string |
+| `v.int()` | `NumberValidator` | 整数 / integer |
+| `v.float()` | `NumberValidator` | 浮動小数点 / float |
+| `v.bool()` | `BoolValidator` | 真偽値 / boolean |
+| `v.list(schema)` | `ListValidator` | リスト・タプル / list and tuple |
+| `v.dict(key_type, schema)` | `DictValidator` | 辞書 / dict |
+| `v.oneof(values)` | `OneOfValidator` | 候補値 / allowed values |
+| `v.instance(type)` | `InstanceValidator` | 任意クラス / custom instance |
+| `v.datetime()` | `DateTimeValidator` | 日時 / datetime |
+| `v.uuid()` | `UUIDValidator` | UUID |
+| `v.mac()` | `MACValidator` | MAC address |
+| `v.sid()` | `SIDValidator` | Windows SID |
+| `v.hwid()` | `HWIDValidator` | Hardware ID |
+| `v.ip()` | `IPValidator` | IP address |
+| `v.snowflake()` | `SnowflakeValidator` | Discord Snowflake |
+| `v.version()` | `VersionValidator` | Semantic Versioning |
+| `v.url()` | `URLValidator` | URL |
+| `v.enum(enum_cls)` | `EnumValidator` | Enum |
 
-### `update`
-```python
-def update(self, model: type[BaseModel], where: dict[str, Any], **fields: Any) -> None
-```
-条件（`where`）に一致するレコードを指定した値（`fields`）で更新します。
+## Common chain methods
 
-### `delete`
-```python
-def delete(self, model: type[BaseModel], *filters: str, **kwargs: Any) -> None
-```
-条件に一致するレコードを削除します。
+| メソッド | 用途 |
+|---|---|
+| `.optional()` | 欠損値と `None` を許容 |
+| `.default(value)` | 欠損時の値を補完 |
+| `.coerce()` | 可能な範囲で型変換 |
+| `.custom(func)` | 追加の検証・変換 |
+| `.when(func)` | 親データに基づく条件付き必須 |
+| `.env(key, decryptor=None)` | 環境変数フォールバック |
+| `.secret()` | エラー時の値をマスク |
+| `.error_msg(text)` | エラーメッセージを上書き |
+| `.examples(list)` | サンプル生成・ドキュメント用の例 |
+| `.description(text)` | フィールド説明 |
 
----
+## Base validator methods
 
-## 検索と集計
+`coerce`, `custom`, `default`, `description`, `env`, `error_msg`, `examples`, `optional`, `secret`, `validate`, `when`
 
-### `search`
-```python
-def search(self, model: type[M], query: str, *, limit: Optional[int] = None) -> list[M]
-```
-FTS5を使用した全文検索を実行します。`Searchable` アノテーションが付いたフィールドが対象となります。
+## Return and error types
 
-### `count`
-```python
-def count(self, model: type[BaseModel], *filters: str, **kwargs: Any) -> int
-```
-条件に一致するレコード数を返します。
-
-### `exists`
-```python
-def exists(self, model: type[BaseModel], *filters: str, **kwargs: Any) -> bool
-```
-条件に一致するレコードが存在するかどうかを返します。
-
-### `select`
-```python
-def select(self, model: type[BaseModel], fields: list[str], *filters: str, **kwargs: Any) -> list[dict[str, Any]]
-```
-特定のフィールドのみを取得し、辞書のリストとして返します。
-
----
-
-## メンテナンスと管理
-
-### `rebuild_fts`
-```python
-def rebuild_fts(self, model: type[BaseModel]) -> None
-```
-全文検索（FTS5）インデックスを再構築します。
-
-### `vacuum`
-```python
-def vacuum(self) -> None
-```
-データベースの `VACUUM` を実行し、ファイルサイズを最適化します。
-
-### `close`
-```python
-def close(self) -> None
-```
-データベース接続を閉じます。
-
-### `backend`
-```python
-def backend(self) -> NyanConnection
-```
-下位層の `NyanConnection` オブジェクトを返します。直接的なトランザクション制御（`backend().transaction()`）などに使用できます。
-
-### `registered_models`
-```python
-def registered_models(self) -> list[type[BaseModel]]
-```
-現在登録されているモデルのリストを返します。
+- `ValidationError`: 単一エラーを表します。`message`, `path`, `value` を持ちます。
+- `ValidationResult`: 複数エラー収集時の戻り値です。`data` と `errors` を持ちます。
+- `CompiledSchema`: `compile(schema)` の戻り値です。`.validate(...)` で検証します。

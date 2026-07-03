@@ -1,80 +1,158 @@
----
-outline: [2, 3]
----
+# Changelog
 
-# CHANGELOG
+このファイルは `git tag`・コミット履歴・バージョン更新コミットをもとに再構成した変更履歴です。
 
-## [1.1.4] - 2026-06-22
+- `v1.0.0` 〜 `v1.2.0` はリポジトリ内のタグを基準に整理しています。
+- `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
+- 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
-### 🐞 Fixed
-- Validated all generated SQLite identifiers and rejected unknown composite-index fields before constructing schema SQL.
-- Hardened string filters so unsupported raw SQL fragments now raise `QueryValidationError` instead of being passed through to SQL.
-- Aligned async query validation with the sync implementation, including unknown-field checks and model-aware filter value serialization.
-- Fixed async filtering for `date`, `datetime`, `list`, and `dict` values.
-- Fixed `__in` handling so normal lists/tuples/sets work consistently and empty collections return no rows.
-- Fixed offset-only pagination by emitting SQLite's required unlimited `LIMIT` clause.
-- Tightened `limit` / `offset` validation to reject negative values, floats, booleans, and strings.
-- Added a clear `TypeError` when `insert_many()` receives mixed model types.
-- Serialized reads and connection shutdown with the existing locks so `close()` cannot race active queries.
-- Protected `vacuum()` and async `execute_raw()` with the existing connection locks.
+## [1.3.1dev1] - 2026-06-22
 
-### 🧪 Tests
-- Added regression tests for unsafe string filters, async field validation, serialized filter values, `__in`, offset-only pagination, strict pagination types, and mixed-model bulk inserts.
+### Added
+- `v.list(...)` に `.min(length)` / `.max(length)` / `.length(length)` を追加し、要素数を検証できるようにしました。
+- 数値バリデータの `.min()` / `.max()` に `exclusive=True`、`.range()` に `exclusive_min=True` / `exclusive_max=True` を追加しました。
+- dataclass と `NamedTuple` をクラススキーマとして渡した場合、検証済みのインスタンスを返すようにしました。
 
-### 📚 Docs
-- Added an APSW full-access implementation plan.
+### Changed
+- `Schema.generate_sample()` がリストの最小要素数と数値の排他的境界を考慮して、有効なサンプルを生成するようになりました。
+- dataclass の `default_factory` を欠損値の補完に使用し、`init=False` フィールドは入力スキーマから除外するようにしました。
+- dataclass / `NamedTuple` の partial 検証は、必須コンストラクタ引数が不足し得るため従来どおり辞書を返します。
 
-### ⚠️ Compatibility
-- String filters now support only simple comparisons such as `"age > 10"` or `"name = 'Alice'"`. Use keyword filters such as `age__gte=10` for advanced filtering.
-- Python 3.9 remains supported for the core package. Some optional and development dependencies cannot provide their latest security-fixed wheels on Python 3.9; use Python 3.10+ for the `speed`, `encryption`, and `dev` extras when processing untrusted input.
+### Fixed
+- 排他的な上下限が同値で、有効値が存在しない数値範囲を定義時に拒否するようにしました。
+- 新規コードに含まれていた末尾空白とスタイル上の問題を修正しました。
 
----
+## [1.3.0dev2] - 2026-03-31
 
-## [1.1.1] - 2026-05-16
+### Changed
+- **.env(key, decryptor=None)**
+  入力データが欠損している場合に、指定した環境変数から値を自動補完します。必要に応じて `decryptor` 引数に関数を渡すことで、取得した値を復号（または加工）してから検証できます。
+- **decryptor 引数の詳細**
+  `decryptor` に渡す関数は `(value: str) -> Any` のシグネチャを持つ必要があります。これにより、環境変数から取得した文字列を検証前に任意の型へ変換・復号することが可能です。
 
-### 🚀 Added
-- **Explicit Transactions**: Added `atomic()` context manager to `NyanSQLite` and `async with atomic()` to `NyanSQLiteAIO` for manual transaction control.
-- **Nested Transactions**: Added support for nested `atomic()` blocks.
+## [1.3.0dev1] - 2026-03-31
 
-### 🔄 Changed
-- **Thread Safety**: Improved thread safety by switching to `threading.RLock` in `NyanSQLite`.
-- **Async Safety**: Implemented re-entrant async lock in `NyanSQLiteAIO` to prevent deadlocks when using `atomic()`.
+### Added
+- すべてのバリデータで利用可能なセキュリティ・開発体験向上メソッドを追加しました。
+  - `.secret()`: バリデーションエラー時に元の入力値を例外メッセージからマスク (`***`) する機能を追加しました。
+  - `.env(key)`: 入力データが欠損している場合に、指定した環境変数（例: `os.environ[key]`）から値を自動補完する機能を追加しました。
+  - `.error_msg(msg)`: 検証エラー時のメッセージを、開発者が指定した独自のメッセージに上書きできる機能を追加しました。
+- 新しいバリデータクラスを追加しました。
+  - `v.url()`: URL フォーマットを検証します。チェインメソッドで特定のスキーム (`.schemes()`)、ドメイン (`.domains()`)、サブドメイン (`.subdomains()`)、パス (`.paths()`)、必須クエリパラメータ (`.query_keys()`) に制限可能です。
+  - `v.enum(enum_cls)`: Python 標準の `enum.Enum` とのシームレスな統合。`.coerce()` で文字列から自動的に Enum インスタンスへ変換します。
 
----
+## [1.3.0dev0] - 2026-03-31
 
-## [1.1.0] - 2026-05-16
+### Added
+- ライセンス認証システム向けの高度なバリデータ群を追加しました。
+- `v.datetime()`: 日時 (`datetime.datetime` / `datetime.date`) の検証、および `.after_now()` / `.before_now()` による期限チェックに対応しました。
+- `v.uuid()`: UUID 形式の検証、および `.version(n)` によるバージョン制限をサポートしました。
+- `v.mac()`: MAC アドレス形式 (`00:11:22...`) の検証に対応しました。
+- `v.sid()`: Windows Security Identifier (SID) 形式 (`S-1-5-21-...`) の検証に対応しました。
+- `v.hwid()`: 汎用ハードウェア ID を検証するバリデータを追加しました。`.length(n)` や `.hex()` で制限可能です。
+- `v.ip()`: IP アドレス (IPv4/IPv6) の検証、および `.v4_only()` / `.v6_only()` によるプロトコル特定に対応しました。
+- `v.snowflake()`: Discord Snowflake ID の検証に対応しました。`.coerce()` で文字列から整数への自動変換をサポートします。
+- `v.version()`: Semantic Versioning (SemVer) 形式を検証するバリデータを追加しました。
 
-### 🚀 Added
-- **Asynchronous Support**: Full support for `asyncio` via `NyanSQLiteAIO` class.
-- **Improved Performance**: Optimized read operations by minimizing thread context switching and processing rows efficiently in `asyncio.to_thread`.
-- **Documentation Updates**: Added English and Japanese documentation for asynchronous usage.
+### Fixed
+- `v.datetime()` において、タイムゾーンを持つ日時（aware）と持たない日時（naive）を比較した際に `TypeError` が発生する問題を修正しました。入力データのタイムゾーンに合わせて現在時刻を取得および補間するように改善しました。
+- `v.ip()` において、無効な入力があった場合のエラーメッセージに元の値を表示するように改善しました。
 
-### 🔄 Changed
-- Internal optimization for `query`, `select`, and `search` methods in `NyanSQLiteAIO`.
-- Optimized read operations in synchronous `NyanSQLite` class by minimizing lock duration.
+## [1.2.3] - 2026-03-15
 
----
+### Added
+- `v.str()` で文字列の長さを検証する `min()`, `max()`, `range()` メソッドを追加しました。
+- クラス記法スキーマ (`class Config: ...`) を追加し、型アノテーションと `Validator` クラス属性を既存の dict スキーマ検証経路へ変換できるようになりました。
+- `v.instance(type_cls)` / `InstanceValidator` を追加し、任意クラスに対する `isinstance` ベースの検証と `.coerce()` をサポートしました。
 
-## [1.0.1] - 2026-05-15
+### Changed
+- `Schema(...)` は実行時に dict スキーマだけでなく class 記法スキーマも直接ラップできるようになりました。
+- README / `docs/index.md` / 回帰テストをクラス記法スキーマと Python 3.9+ 型ヒント対応に合わせて更新しました。
 
-### 🐞 Fixed
-- Minor bug fixes and performance improvements.
+### Fixed
+- クラス記法スキーマで `Optional[T]` / `Union[T, None]` が必須扱いになっていた問題を修正しました。
+- `typing.Union` / PEP 604 (`T | None`) のうち、`None` 以外の複数メンバーを持つ型がサイレントにパススルーされる問題を修正し、明示的に `TypeError` を送出するようにしました。
+- Python 3.9 で `types.UnionType` や `_UnionType: type | None` に起因する import / 実行時エラーが発生しないよう互換性を改善しました。
+- `InstanceValidator.coerce()` が元例外を失っていた問題を修正し、例外チェーンを保持するようにしました。
 
----
+## [1.2.1] - 2026-03-07
 
-## [1.0.0] - 2026-05-15
+### Added
+- `v.auto_infer(data, type_map=None, schema_overrides=None)` を追加し、既存データから ValidKit スキーマを逆生成できるようになりました。
+- `type_map` によるカスタム型対応を追加しました。callable が `Validator` を返す場合はそのまま使い、プリミティブ値を返す場合は変換後の値で再推論できます。
+- `schema_overrides` により、トップレベルの dict フィールドを明示的なバリデータで上書きできるようになりました。
 
-### 🚀 Added
-- **Pydantic v2 support**: Models can be used directly as database schemas.
-- **Django-like Query Syntax**: Support for intuitive filtering such as `__gte`, `__in`, `__like`, etc.
-- **FTS5 Full-Text Search**: Fast full-text search capabilities using SQLite's FTS5 extension.
-- **Automatic Index Management**: B-tree indexes are automatically created using `Indexed[T]` and `UniqueIndexed[T]` annotations.
-- **Composite Indexes**: Support for `CompositeIndex` via Pydantic's `Field` extra metadata.
-- **Transparent Type Handling**: Automatically handles complex types like `dict` and `list` by serializing them to JSON.
-- **WAL Mode Support**: Write-Ahead Logging is enabled by default for better performance and concurrency.
-- **Context Manager Support**: `NyanSQLite` can be used as a context manager for automatic connection closing.
+### Changed
+- `v.auto_infer()` の型ヒントと回帰テストを拡充し、mypy / IDE で扱いやすい API に整理しました。
+- ドキュメントとサンプルを `auto_infer()`・`schema_overrides`・`generate_sample()` の現在仕様に合わせて更新しました。
 
-### 🔄 Changed
-- Initial public release of NyanSQLite.
+### Fixed
+- `schema_overrides` がネストした dict やリスト要素に漏れて適用される問題を修正しました。
+- `type_map` の callable による再推論時に `schema_overrides` が意図せず伝播する問題を修正しました。
+- `NumberValidator.range()` で `min > max` の不正な境界を定義時に `ValueError` として拒否し、`.min()` / `.max()` との組み合わせでも矛盾を防ぐようにしました。
+- `Schema.generate_sample()` が生成候補を各バリデータで再検証するようになり、`regex()` や `custom()` を満たせない不正なサンプルを返さず `ValueError` を送出するようになりました。
 
----
+## [1.2.0] - 2026-02-27
+### Added
+- すべてのバリデータに `.default(value)` を追加しました。欠損キーを自動補完し、設定したフィールドは自動的に optional として扱われます。
+- すべてのバリデータに `.examples(list)` を追加しました。サンプル生成やドキュメント補助に使える例を保持できます。
+- すべてのバリデータに `.description(text)` を追加しました。フィールドの説明文を保持できます。
+- `Schema.generate_sample()` を追加しました。スキーマからサンプルデータを再帰的に生成でき、優先順位は `.default()` → `.examples()[0]` → 型ごとの代表値です。
+
+### Changed
+- `example.py` とドキュメントを更新し、新しい補完・サンプル生成 API を反映しました。
+- 型チェック関連の修正を行い、公開 API の利用時に静的解析しやすくしました。
+
+## [1.1.3] - 2026-02-27
+
+### Added
+- 各型バリデータの coercion（自動型変換）を実装しました。
+- 型変換の挙動を検証する専用テストを追加しました。
+- `validkit` パッケージ初期化を整備し、主要な関数・クラスをトップレベルから import できるようにしました。
+
+## [1.1.2] - 2026-02-27
+
+### Added
+- 宣言的なスキーマ定義によるバリデーションライブラリ本体を実装しました。
+- カスタムルールを含む基本的な検証機能を追加しました。
+
+## [1.1.1] - 2026-02-27
+
+### Changed
+- `example.py` を更新し、利用例を見直しました。
+
+### Fixed
+- 軽微な不具合を修正しました。
+
+## [1.1.0] - 2026-02-27
+
+### Added
+- `Schema[T]` ジェネリックラッパーを追加し、`validate()` の戻り値を IDE / 型チェッカーがより正確に推論できるようにしました。
+- `validate()` に型補完向けのオーバーロードを追加し、TypedDict と組み合わせた補完体験を改善しました。
+
+### Changed
+- 実行時に不要なオーバーロード定義を `TYPE_CHECKING` 配下へ移し、静的解析向けの実装に整理しました。
+- `1.1.0` へバージョンを更新し、`Schema[T]` を公開 API として位置づけました。
+
+## [1.0.2] - 2026-01-24
+
+### Added
+- `SECURITY.md` を追加し、セキュリティポリシーを整備しました。
+
+### Changed
+- `SECURITY.md` の日英構成と書式を整理しました。
+- ライセンス表記まわりの説明を見直しました。
+
+## [1.0.1] - 2026-01-24
+
+### Added
+- MIT ライセンスを追加しました。
+
+### Changed
+- `README.md` に追加情報とバッジを反映しました。
+
+## [1.0.0] - 2026-01-24
+
+### Added
+- CI ワークフローと自動チェック基盤を追加しました。
+- パッケージ設定を整備し、最初の公開リリースを作成しました。

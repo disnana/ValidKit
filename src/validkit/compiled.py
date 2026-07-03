@@ -177,10 +177,13 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             ctx.var_counter += 1
             
             key_obj_name = ctx.add_object(key)
+            key_path_name = ctx.add_object(str(key))
             current_path_var = f"current_path_{sub_idx}"
+            should_validate_var = f"should_validate_{sub_idx}"
             
             # Setup path variable
-            lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_obj_name} if {path_var} else {key_obj_name}")
+            lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_path_name} if {path_var} else {key_path_name}")
+            lines.append(f"{indent_str}    {should_validate_var} = False")
             
             # Sub-schema options validation setup
             is_optional = False
@@ -207,6 +210,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             # Read logic if key is missing
             lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var}:")
             lines.append(f"{indent_str}        val_{sub_idx} = {input_dict_var}[{key_obj_name}]")
+            lines.append(f"{indent_str}        {should_validate_var} = True")
             
             # If missing
             lines.append(f"{indent_str}    else:")
@@ -220,15 +224,16 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 if env_decryptor_name is not None:
                     lines.append(f"{m_ind}    try:")
                     lines.append(f"{m_ind}        val_{sub_idx} = {env_decryptor_name}(env_val)")
+                    lines.append(f"{m_ind}        {should_validate_var} = True")
                     lines.append(f"{m_ind}    except Exception as e:")
                     lines.append(f"{m_ind}        err_msg = 'Failed to decrypt env var: ' + str(e)")
                     lines.append(f"{m_ind}        if collect_errors and errors is not None:")
                     lines.append(f"{m_ind}            errors.append(ErrorDetail({current_path_var}, err_msg, None))")
-                    lines.append(f"{m_ind}            continue")
                     lines.append(f"{m_ind}        else:")
                     lines.append(f"{m_ind}            raise ValidationError(err_msg, {current_path_var}, None)")
                 else:
                     lines.append(f"{m_ind}    val_{sub_idx} = env_val")
+                    lines.append(f"{m_ind}    {should_validate_var} = True")
                 lines.append(f"{m_ind}else:")
                 missing_indent += 4
                 m_ind = " " * missing_indent
@@ -274,7 +279,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 m_ind = " " * missing_indent
             
             # Run sub-validation
-            lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var} or ({env_key is not None} and os.environ.get({repr(env_key)}) is not None):")
+            lines.append(f"{indent_str}    if {should_validate_var}:")
             lines.append(f"{indent_str}        try:")
             
             sub_val_var = f"val_{sub_idx}"
@@ -315,6 +320,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         try_indent_str = " " * try_indent
         
         if isinstance(schema, StringValidator):
+            handled_by_generated_code = True
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, str):")
                 lines.append(f"{try_indent_str}    {value_var} = str({value_var})")
@@ -338,6 +344,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, NumberValidator):
+            handled_by_generated_code = True
             type_cls_name = "int" if schema._type_cls is int else "float"
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, {type_cls_name}):")
@@ -368,6 +375,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, BoolValidator):
+            handled_by_generated_code = True
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, bool):")
                 lines.append(f"{try_indent_str}    if isinstance({value_var}, str):")
@@ -387,6 +395,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, ListValidator):
+            handled_by_generated_code = True
             lines.append(f"{try_indent_str}if not isinstance({value_var}, (list, tuple)):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected list, got ' + type({value_var}).__name__)")
             
@@ -398,40 +407,51 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{try_indent_str}if len({value_var}) > {schema._max_len}:")
                 lines.append(f"{try_indent_str}    raise ValueError('List length ' + str(len({value_var})) + ' is longer than maximum length {schema._max_len}')")
                 
-            lines.append(f"{try_indent_str}list_res = []")
-            lines.append(f"{try_indent_str}for i_list, item_list in enumerate({value_var}):")
-            lines.append(f"{try_indent_str}    item_path = {path_var} + '[' + str(i_list) + ']' if {path_var} else '[' + str(i_list) + ']'")
+            list_res_var = f"list_res_{idx}"
+            list_index_var = f"i_list_{idx}"
+            list_item_var = f"item_list_{idx}"
+            list_item_path_var = f"item_path_{idx}"
+            lines.append(f"{try_indent_str}{list_res_var} = []")
+            lines.append(f"{try_indent_str}for {list_index_var}, {list_item_var} in enumerate({value_var}):")
+            lines.append(f"{try_indent_str}    {list_item_path_var} = {path_var} + '[' + str({list_index_var}) + ']' if {path_var} else '[' + str({list_index_var}) + ']'")
             
             preprocessed_item = _preprocess_schema(schema._item_validator)
-            item_lines, sub_res_var = _gen_code(preprocessed_item, ctx, "item_list", "item_path", try_indent + 4)
+            item_lines, sub_res_var = _gen_code(preprocessed_item, ctx, list_item_var, list_item_path_var, try_indent + 4)
             lines.extend(item_lines)
-            lines.append(f"{try_indent_str}    list_res.append({sub_res_var})")
-            lines.append(f"{try_indent_str}val_final_{idx} = list_res")
+            lines.append(f"{try_indent_str}    {list_res_var}.append({sub_res_var})")
+            lines.append(f"{try_indent_str}val_final_{idx} = {list_res_var}")
 
         elif isinstance(schema, DictValidator):
+            handled_by_generated_code = True
             key_type_name = schema._key_type.__name__
             lines.append(f"{try_indent_str}if not isinstance({value_var}, dict):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected dict, got ' + type({value_var}).__name__)")
             
-            lines.append(f"{try_indent_str}dict_res = {{}}")
-            lines.append(f"{try_indent_str}for k_dict, v_dict in {value_var}.items():")
-            lines.append(f"{try_indent_str}    if not isinstance(k_dict, {ctx.add_object(schema._key_type)}):")
-            lines.append(f"{try_indent_str}        raise TypeError('Expected key type {key_type_name}, got ' + type(k_dict).__name__)")
-            lines.append(f"{try_indent_str}    dict_item_path = {path_var} + '.' + str(k_dict) if {path_var} else str(k_dict)")
+            dict_res_var = f"dict_res_{idx}"
+            dict_key_var = f"k_dict_{idx}"
+            dict_value_var = f"v_dict_{idx}"
+            dict_item_path_var = f"dict_item_path_{idx}"
+            lines.append(f"{try_indent_str}{dict_res_var} = {{}}")
+            lines.append(f"{try_indent_str}for {dict_key_var}, {dict_value_var} in {value_var}.items():")
+            lines.append(f"{try_indent_str}    if not isinstance({dict_key_var}, {ctx.add_object(schema._key_type)}):")
+            lines.append(f"{try_indent_str}        raise TypeError('Expected key type {key_type_name}, got ' + type({dict_key_var}).__name__)")
+            lines.append(f"{try_indent_str}    {dict_item_path_var} = {path_var} + '.' + str({dict_key_var}) if {path_var} else str({dict_key_var})")
             
             preprocessed_val = _preprocess_schema(schema._value_validator)
-            val_lines, sub_res_var = _gen_code(preprocessed_val, ctx, "v_dict", "dict_item_path", try_indent + 4)
+            val_lines, sub_res_var = _gen_code(preprocessed_val, ctx, dict_value_var, dict_item_path_var, try_indent + 4)
             lines.extend(val_lines)
-            lines.append(f"{try_indent_str}    dict_res[k_dict] = {sub_res_var}")
-            lines.append(f"{try_indent_str}val_final_{idx} = dict_res")
+            lines.append(f"{try_indent_str}    {dict_res_var}[{dict_key_var}] = {sub_res_var}")
+            lines.append(f"{try_indent_str}val_final_{idx} = {dict_res_var}")
 
         elif isinstance(schema, OneOfValidator):
+            handled_by_generated_code = True
             choices_name = ctx.add_object(schema._choices)
             lines.append(f"{try_indent_str}if {value_var} not in {choices_name}:")
             lines.append(f"{try_indent_str}    raise ValueError(\"Value '\" + str({value_var}) + \"' is not one of \" + str({choices_name}))")
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, InstanceValidator):
+            handled_by_generated_code = True
             type_cls_name = ctx.add_object(schema._instance_type)
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, {type_cls_name}):")
@@ -448,11 +468,12 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
 
         else:
             # Fallback to standard validation
+            handled_by_generated_code = False
             validator_name = ctx.add_object(schema)
             lines.append(f"{try_indent_str}val_final_{idx} = {validator_name}.validate({value_var}, root_data, {path_var}, collect_errors, errors)")
 
         # Custom checks execution
-        if schema._custom_checks:
+        if handled_by_generated_code and schema._custom_checks:
             for check in schema._custom_checks:
                 check_name = ctx.add_object(check)
                 lines.append(f"{try_indent_str}val_final_{idx} = {check_name}(val_final_{idx})")

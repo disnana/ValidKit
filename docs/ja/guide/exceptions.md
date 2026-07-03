@@ -1,63 +1,23 @@
-# 例外クラスリファレンス
+# 例外と結果型
 
-NanaSQLite は操作の種類ごとに細分化された例外クラスを提供しています。
+## `ValidationError`
 
-## 例外階層
+検証に失敗したときに送出される例外です。
 
-```
-NanaSQLiteError（基底クラス）
-├── NanaSQLiteValidationError    # データ検証エラー
-├── NanaSQLiteDatabaseError      # DB 操作エラー
-├── NanaSQLiteTransactionError   # トランザクションエラー
-├── NanaSQLiteConnectionError    # 接続エラー
-│   └── NanaSQLiteClosedError    # クローズ済みエラー
-├── NanaSQLiteLockError          # ロック取得エラー
-└── NanaSQLiteCacheError         # キャッシュエラー
-```
+- `message`
+- `path`
+- `value`
 
-## NanaSQLiteError
+## `ErrorDetail`
 
-すべての NanaSQLite 例外の基底クラスです。
+`collect_errors=True` で収集される 1 件分のエラーです。
 
-## NanaSQLiteValidationError
+## `ValidationResult`
 
-データバリデーションに失敗した場合（`validkit-py` スキーマ検証）。
-
-## NanaSQLiteDatabaseError
-
-SQLite 操作中のエラー。`original_error` 属性で元の例外を保持。
-
-## NanaSQLiteTransactionError
-
-トランザクションの二重開始、外部での commit/rollback 呼び出し。
-
-## NanaSQLiteConnectionError
-
-データベース接続エラー。
-
-### NanaSQLiteClosedError
-
-`NanaSQLiteConnectionError` のサブクラス。クローズ済みDBへの操作。
-
-## NanaSQLiteLockError
-
-`lock_timeout` 内にロック取得できなかった場合。
-
-## NanaSQLiteCacheError
-
-キャッシュ操作中のエラー。
-
-## インポート
+複数エラー収集時の戻り値です。
 
 ```python
-from nanasqlite import (
-    NanaSQLiteError,
-    NanaSQLiteValidationError,
-    NanaSQLiteDatabaseError,
-    NanaSQLiteTransactionError,
-    NanaSQLiteConnectionError,
-    NanaSQLiteClosedError,
-    NanaSQLiteLockError,
-    NanaSQLiteCacheError,
-)
+result = validate(data, schema, collect_errors=True)
+print(result.data)
+print(result.errors)
 ```

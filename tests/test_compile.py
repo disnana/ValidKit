@@ -132,3 +132,53 @@ def test_compile_migration():
     migrate = {"user_name": "username"}
     res = schema.validate({"user_name": "Dave", "age": 25}, migrate=migrate)
     assert res == {"username": "Dave", "age": 25}
+
+
+def test_compile_nested_list_validator_does_not_reuse_temp_names():
+    schema = compile({
+        "matrix": v.list(v.list(v.int()))
+    })
+
+    data = {"matrix": [[1, 2], [3]]}
+    assert schema.validate(data) == data
+
+
+def test_compile_nested_dict_validator_does_not_reuse_temp_names():
+    schema = compile({
+        "groups": v.dict(str, v.dict(str, v.int()))
+    })
+
+    data = {"groups": {"a": {"x": 1}, "b": {"y": 2}}}
+    assert schema.validate(data) == data
+
+
+def test_compile_env_decryptor_collect_errors_compiles_and_collects(monkeypatch):
+    def bad_decryptor(value):
+        raise ValueError("bad decrypt")
+
+    monkeypatch.setenv("TEST_BAD_SECRET", "encrypted")
+    schema = compile({
+        "secret": v.str().env("TEST_BAD_SECRET", decryptor=bad_decryptor)
+    })
+
+    result = schema.validate({}, collect_errors=True)
+    assert isinstance(result, ValidationResult)
+    assert len(result.errors) == 1
+    assert "Failed to decrypt env var" in result.errors[0].message
+
+
+def test_compile_fallback_validator_custom_runs_once():
+    calls = []
+
+    def track(value):
+        calls.append(value)
+        return value
+
+    schema = compile({
+        "dt": v.datetime().custom(track)
+    })
+
+    import datetime
+
+    schema.validate({"dt": datetime.datetime(2024, 1, 1)})
+    assert len(calls) == 1
