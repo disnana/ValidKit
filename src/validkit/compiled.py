@@ -1,7 +1,7 @@
 import re
 import os
 import builtins
-from typing import Any, Dict, List, Optional, Union, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple
 from .validator import ValidationError, ErrorDetail, ValidationResult, _is_class_schema, _class_to_schema
 from .v import (
     Validator,
@@ -13,7 +13,6 @@ from .v import (
     ListValidator,
     DictValidator,
     OneOfValidator,
-    DateTimeValidator,
 )
 
 class CompilerContext:
@@ -125,40 +124,40 @@ def compile(schema: Any) -> CompiledSchema:
     schema_orig = schema
     preprocessed = _preprocess_schema(schema)
     ctx = CompilerContext()
-    
+
     # Code generation helper
-    lines = []
+    lines: List[str] = []
     lines.append("def validate_compiled(value, root_data, path_prefix='', collect_errors=False, errors=None, partial=False, base=None):")
-    
+
     # Generate verification body
     body_lines, result_var = _gen_code(preprocessed, ctx, "value", "path_prefix", 4)
     lines.extend(body_lines)
     lines.append(f"    return {result_var}")
-    
+
     code_str = "\n".join(lines)
-    
+
     # Compile the code
-    local_vars = {}
+    local_vars: Dict[str, Any] = {}
     try:
         exec(code_str, ctx.context, local_vars)
     except Exception as e:
         raise RuntimeError(f"Failed to compile schema to Python code:\n{code_str}") from e
-        
+
     validate_func = local_vars["validate_compiled"]
     return CompiledSchema(schema_orig, validate_func, ctx)
 
 
 def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, indent: int) -> Tuple[List[str], str]:
-    lines = []
+    lines: List[str] = []
     indent_str = " " * indent
-    
+
     if isinstance(schema, dict):
         idx = ctx.var_counter
         ctx.var_counter += 1
         dict_result_var = f"dict_res_{idx}"
         input_dict_var = f"input_dict_{idx}"
         base_dict_var = f"base_dict_{idx}"
-        
+
         lines.append(f"{indent_str}if {value_var} is not None and not isinstance({value_var}, dict):")
         lines.append(f"{indent_str}    err_msg = 'Expected dict, got ' + type({value_var}).__name__")
         lines.append(f"{indent_str}    if collect_errors and errors is not None:")
@@ -166,25 +165,25 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         lines.append(f"{indent_str}        {dict_result_var} = {value_var}")
         lines.append(f"{indent_str}    else:")
         lines.append(f"{indent_str}        raise ValidationError(err_msg, {path_var}, {value_var})")
-        
+
         lines.append(f"{indent_str}else:")
         lines.append(f"{indent_str}    {dict_result_var} = {{}}")
         lines.append(f"{indent_str}    {input_dict_var} = {value_var} if {value_var} is not None else {{}}")
         lines.append(f"{indent_str}    {base_dict_var} = base if isinstance(base, dict) else {{}}")
-        
+
         for key, sub_schema in schema.items():
             sub_idx = ctx.var_counter
             ctx.var_counter += 1
-            
+
             key_obj_name = ctx.add_object(key)
             key_path_name = ctx.add_object(str(key))
             current_path_var = f"current_path_{sub_idx}"
             should_validate_var = f"should_validate_{sub_idx}"
-            
+
             # Setup path variable
             lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_path_name} if {path_var} else {key_path_name}")
             lines.append(f"{indent_str}    {should_validate_var} = False")
-            
+
             # Sub-schema options validation setup
             is_optional = False
             has_default = False
@@ -194,7 +193,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             when_cond_name = None
             custom_error_msg = None
             secret_val = False
-            
+
             if isinstance(sub_schema, Validator):
                 is_optional = sub_schema._optional
                 has_default = sub_schema._has_default
@@ -206,17 +205,17 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                     when_cond_name = ctx.add_object(sub_schema._when_condition)
                 custom_error_msg = sub_schema._custom_error_msg
                 secret_val = sub_schema._secret_val
-                
+
             # Read logic if key is missing
             lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var}:")
             lines.append(f"{indent_str}        val_{sub_idx} = {input_dict_var}[{key_obj_name}]")
             lines.append(f"{indent_str}        {should_validate_var} = True")
-            
+
             # If missing
             lines.append(f"{indent_str}    else:")
             missing_indent = indent + 8
             m_ind = " " * missing_indent
-            
+
             # 1. Environment variables
             if env_key is not None:
                 lines.append(f"{m_ind}env_val = os.environ.get({repr(env_key)})")
@@ -237,17 +236,17 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{m_ind}else:")
                 missing_indent += 4
                 m_ind = " " * missing_indent
-                
+
             # 2. Base value
             lines.append(f"{m_ind}if {key_obj_name} in {base_dict_var}:")
             lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {base_dict_var}[{key_obj_name}]")
-            
+
             # 3. Default value
             if has_default:
                 default_val_name = ctx.add_object(default_val)
                 lines.append(f"{m_ind}elif True:")
                 lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {default_val_name}")
-                
+
             # 4. When condition
             elif when_cond_name is not None:
                 lines.append(f"{m_ind}elif not {when_cond_name}(root_data):")
@@ -261,7 +260,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{m_ind}        errors.append(ErrorDetail({current_path_var}, {repr(err_msg)}, {err_val}))")
                 lines.append(f"{m_ind}    else:")
                 lines.append(f"{m_ind}        raise ValidationError({repr(err_msg)}, {current_path_var}, {err_val})")
-            
+
             # 5. Optional, partial, or error
             else:
                 lines.append(f"{m_ind}elif {repr(is_optional)} or partial:")
@@ -273,31 +272,31 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{m_ind}        errors.append(ErrorDetail({current_path_var}, {repr(err_msg)}, {err_val}))")
                 lines.append(f"{m_ind}    else:")
                 lines.append(f"{m_ind}        raise ValidationError({repr(err_msg)}, {current_path_var}, {err_val})")
-                
+
             if env_key is not None:
                 missing_indent -= 4
                 m_ind = " " * missing_indent
-            
+
             # Run sub-validation
             lines.append(f"{indent_str}    if {should_validate_var}:")
             lines.append(f"{indent_str}        try:")
-            
+
             sub_val_var = f"val_{sub_idx}"
             sub_lines, sub_result_var = _gen_code(sub_schema, ctx, sub_val_var, current_path_var, indent + 12)
             lines.extend(sub_lines)
-            
+
             lines.append(f"{indent_str}            {dict_result_var}[{key_obj_name}] = {sub_result_var}")
             lines.append(f"{indent_str}        except ValidationError:")
             lines.append(f"{indent_str}            if not collect_errors:")
             lines.append(f"{indent_str}                raise")
-            
+
         return lines, dict_result_var
 
     elif isinstance(schema, Validator):
         idx = ctx.var_counter
         ctx.var_counter += 1
         res_var = f"res_{idx}"
-        
+
         # Helper variables
         when_cond_name = None
         if schema._when_condition is not None:
@@ -307,7 +306,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{indent_str}else:")
             indent += 4
             indent_str = " " * indent
-            
+
         if schema._optional:
             lines.append(f"{indent_str}if {value_var} is None:")
             lines.append(f"{indent_str}    {res_var} = base if base is not None else None")
@@ -318,33 +317,32 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         lines.append(f"{indent_str}try:")
         try_indent = indent + 4
         try_indent_str = " " * try_indent
-        
+        handled_by_generated_code = True
+
         if isinstance(schema, StringValidator):
-            handled_by_generated_code = True
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, str):")
                 lines.append(f"{try_indent_str}    {value_var} = str({value_var})")
-            
+
             lines.append(f"{try_indent_str}if not isinstance({value_var}, str):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected str, got ' + type({value_var}).__name__)")
-            
+
             if schema._min_len is not None:
                 lines.append(f"{try_indent_str}if len({value_var}) < {schema._min_len}:")
                 lines.append(f"{try_indent_str}    raise ValueError('String length ' + str(len({value_var})) + ' is shorter than minimum length {schema._min_len}')")
-                
+
             if schema._max_len is not None:
                 lines.append(f"{try_indent_str}if len({value_var}) > {schema._max_len}:")
                 lines.append(f"{try_indent_str}    raise ValueError('String length ' + str(len({value_var})) + ' is longer than maximum length {schema._max_len}')")
-                
+
             if schema._regex is not None:
                 regex_obj_name = ctx.add_object(schema._regex)
                 lines.append(f"{try_indent_str}if not {regex_obj_name}.match({value_var}):")
                 lines.append(f"{try_indent_str}    raise ValueError(\"Value '\" + str({value_var}) + \"' does not match regex '\" + {regex_obj_name}.pattern + \"'\")")
-                
+
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, NumberValidator):
-            handled_by_generated_code = True
             type_cls_name = "int" if schema._type_cls is int else "float"
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, {type_cls_name}):")
@@ -352,10 +350,10 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{try_indent_str}        {value_var} = {type_cls_name}({value_var})")
                 lines.append(f"{try_indent_str}    except (ValueError, TypeError):")
                 lines.append(f"{try_indent_str}        pass")
-                
+
             lines.append(f"{try_indent_str}if not isinstance({value_var}, {type_cls_name}):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected {type_cls_name}, got ' + type({value_var}).__name__)")
-            
+
             if schema._min is not None:
                 if schema._exclusive_min:
                     lines.append(f"{try_indent_str}if {value_var} <= {schema._min}:")
@@ -363,7 +361,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 else:
                     lines.append(f"{try_indent_str}if {value_var} < {schema._min}:")
                     lines.append(f"{try_indent_str}    raise ValueError('Value ' + str({value_var}) + ' is less than minimum {schema._min}')")
-                    
+
             if schema._max is not None:
                 if schema._exclusive_max:
                     lines.append(f"{try_indent_str}if {value_var} >= {schema._max}:")
@@ -371,11 +369,10 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 else:
                     lines.append(f"{try_indent_str}if {value_var} > {schema._max}:")
                     lines.append(f"{try_indent_str}    raise ValueError('Value ' + str({value_var}) + ' is greater than maximum {schema._max}')")
-                    
+
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, BoolValidator):
-            handled_by_generated_code = True
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, bool):")
                 lines.append(f"{try_indent_str}    if isinstance({value_var}, str):")
@@ -389,24 +386,23 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{try_indent_str}            {value_var} = True")
                 lines.append(f"{try_indent_str}        elif {value_var} == 0:")
                 lines.append(f"{try_indent_str}            {value_var} = False")
-                
+
             lines.append(f"{try_indent_str}if not isinstance({value_var}, bool):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected bool, got ' + type({value_var}).__name__)")
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, ListValidator):
-            handled_by_generated_code = True
             lines.append(f"{try_indent_str}if not isinstance({value_var}, (list, tuple)):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected list, got ' + type({value_var}).__name__)")
-            
+
             if schema._min_len is not None:
                 lines.append(f"{try_indent_str}if len({value_var}) < {schema._min_len}:")
                 lines.append(f"{try_indent_str}    raise ValueError('List length ' + str(len({value_var})) + ' is shorter than minimum length {schema._min_len}')")
-                
+
             if schema._max_len is not None:
                 lines.append(f"{try_indent_str}if len({value_var}) > {schema._max_len}:")
                 lines.append(f"{try_indent_str}    raise ValueError('List length ' + str(len({value_var})) + ' is longer than maximum length {schema._max_len}')")
-                
+
             list_res_var = f"list_res_{idx}"
             list_index_var = f"i_list_{idx}"
             list_item_var = f"item_list_{idx}"
@@ -414,7 +410,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}{list_res_var} = []")
             lines.append(f"{try_indent_str}for {list_index_var}, {list_item_var} in enumerate({value_var}):")
             lines.append(f"{try_indent_str}    {list_item_path_var} = {path_var} + '[' + str({list_index_var}) + ']' if {path_var} else '[' + str({list_index_var}) + ']'")
-            
+
             preprocessed_item = _preprocess_schema(schema._item_validator)
             item_lines, sub_res_var = _gen_code(preprocessed_item, ctx, list_item_var, list_item_path_var, try_indent + 4)
             lines.extend(item_lines)
@@ -422,11 +418,10 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}val_final_{idx} = {list_res_var}")
 
         elif isinstance(schema, DictValidator):
-            handled_by_generated_code = True
             key_type_name = schema._key_type.__name__
             lines.append(f"{try_indent_str}if not isinstance({value_var}, dict):")
             lines.append(f"{try_indent_str}    raise TypeError('Expected dict, got ' + type({value_var}).__name__)")
-            
+
             dict_res_var = f"dict_res_{idx}"
             dict_key_var = f"k_dict_{idx}"
             dict_value_var = f"v_dict_{idx}"
@@ -436,7 +431,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}    if not isinstance({dict_key_var}, {ctx.add_object(schema._key_type)}):")
             lines.append(f"{try_indent_str}        raise TypeError('Expected key type {key_type_name}, got ' + type({dict_key_var}).__name__)")
             lines.append(f"{try_indent_str}    {dict_item_path_var} = {path_var} + '.' + str({dict_key_var}) if {path_var} else str({dict_key_var})")
-            
+
             preprocessed_val = _preprocess_schema(schema._value_validator)
             val_lines, sub_res_var = _gen_code(preprocessed_val, ctx, dict_value_var, dict_item_path_var, try_indent + 4)
             lines.extend(val_lines)
@@ -444,14 +439,12 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}val_final_{idx} = {dict_res_var}")
 
         elif isinstance(schema, OneOfValidator):
-            handled_by_generated_code = True
             choices_name = ctx.add_object(schema._choices)
             lines.append(f"{try_indent_str}if {value_var} not in {choices_name}:")
             lines.append(f"{try_indent_str}    raise ValueError(\"Value '\" + str({value_var}) + \"' is not one of \" + str({choices_name}))")
             lines.append(f"{try_indent_str}val_final_{idx} = {value_var}")
 
         elif isinstance(schema, InstanceValidator):
-            handled_by_generated_code = True
             type_cls_name = ctx.add_object(schema._instance_type)
             if schema._coerce:
                 lines.append(f"{try_indent_str}if not isinstance({value_var}, {type_cls_name}):")
@@ -477,9 +470,9 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             for check in schema._custom_checks:
                 check_name = ctx.add_object(check)
                 lines.append(f"{try_indent_str}val_final_{idx} = {check_name}(val_final_{idx})")
-                
+
         lines.append(f"{try_indent_str}{res_var} = val_final_{idx}")
-        
+
         # Exception handler
         lines.append(f"{indent_str}except (TypeError, ValueError) as e:")
         err_msg_expr = repr(schema._custom_error_msg) if schema._custom_error_msg else "str(e)"
@@ -489,12 +482,12 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         lines.append(f"{indent_str}        {res_var} = {value_var}")
         lines.append(f"{indent_str}    else:")
         lines.append(f"{indent_str}        raise ValidationError({err_msg_expr}, {path_var}, {err_val_expr})")
-        
+
         # Close optional block
         if schema._optional:
             indent -= 4
             indent_str = " " * indent
-            
+
         # Close when_condition block
         if schema._when_condition is not None:
             indent -= 4

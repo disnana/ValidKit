@@ -7,7 +7,6 @@ import inspect
 import importlib
 import sys
 from pathlib import Path
-from textwrap import dedent
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +16,6 @@ SITE = DOCS / "site"
 
 sys.path.insert(0, str(SRC))
 
-from validkit import Schema, ValidationError, ValidationResult, compile, v, validate  # noqa: E402,F401
 compiled_module = importlib.import_module("validkit.compiled")
 validator_module = importlib.import_module("validkit.validator")
 v_module = importlib.import_module("validkit.v")

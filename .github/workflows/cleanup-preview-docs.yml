@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -29,10 +29,10 @@ jobs:
 
           git checkout gh-pages
 
-          if [ -d "preview/pr-${PR_NUMBER}" ]; then
+          if [ -d "docs/preview/pr-${PR_NUMBER}" ]; then
             git config user.name 'github-actions[bot]'
             git config user.email 'github-actions[bot]@users.noreply.github.com'
-            git rm -rf "preview/pr-${PR_NUMBER}"
+            git rm -rf "docs/preview/pr-${PR_NUMBER}"
             git commit -m "docs: remove preview for PR #${PR_NUMBER} [skip ci]"
             git push origin gh-pages
             echo "Removed preview for PR #${PR_NUMBER}"

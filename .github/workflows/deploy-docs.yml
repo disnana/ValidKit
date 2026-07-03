@@ -18,12 +18,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -35,7 +35,7 @@ jobs:
         run: python scripts/gen_api_docs.py
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
@@ -54,20 +54,20 @@ jobs:
 
       - name: Preserve Benchmark History and Previews
         run: |
-          # Fetch existing gh-pages branch to pull benchmark data (stored in dev/bench)
+          # Fetch existing gh-pages branch to pull benchmark data and previews.
           git fetch origin gh-pages:gh-pages || echo "gh-pages branch not found, skipping preservation"
-          # Attempt to extract the dev directory from gh-pages branch
-          if git ls-tree -r gh-pages | grep -q 'dev/'; then
-            git checkout gh-pages -- dev
-            cp -r dev docs/site/.vitepress/dist/
+          # GitHub Pages is configured to publish from gh-pages:/docs.
+          if git ls-tree -r gh-pages | grep -q 'docs/dev/'; then
+            git checkout gh-pages -- docs/dev
+            cp -r docs/dev docs/site/.vitepress/dist/
             echo "Successfully preserved benchmark history from gh-pages"
           else
             echo "No benchmark history found on gh-pages"
           fi
-          # Preserve PR preview deployments (stored in preview/pr-*)
-          if git ls-tree -r gh-pages | grep -q 'preview/'; then
-            git checkout gh-pages -- preview
-            cp -r preview docs/site/.vitepress/dist/
+          # Preserve PR preview deployments (stored in docs/preview/pr-*).
+          if git ls-tree -r gh-pages | grep -q 'docs/preview/'; then
+            git checkout gh-pages -- docs/preview
+            cp -r docs/preview docs/site/.vitepress/dist/
             echo "Successfully preserved PR preview deployments from gh-pages"
           else
             echo "No PR preview deployments found on gh-pages"
@@ -78,6 +78,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/site/.vitepress/dist
+          destination_dir: docs
           force_orphan: true
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
