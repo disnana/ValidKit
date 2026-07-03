@@ -4,3 +4,4 @@
 dist/
 test.py
 LOCAL/
+docs/site/node_modules/
