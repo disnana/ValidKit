@@ -156,6 +156,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         idx = ctx.var_counter
         ctx.var_counter += 1
         dict_result_var = f"dict_res_{idx}"
+        input_dict_var = f"input_dict_{idx}"
+        base_dict_var = f"base_dict_{idx}"
         
         lines.append(f"{indent_str}if {value_var} is not None and not isinstance({value_var}, dict):")
         lines.append(f"{indent_str}    err_msg = 'Expected dict, got ' + type({value_var}).__name__")
@@ -167,8 +169,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         
         lines.append(f"{indent_str}else:")
         lines.append(f"{indent_str}    {dict_result_var} = {{}}")
-        lines.append(f"{indent_str}    input_dict = {value_var} if {value_var} is not None else {{}}")
-        lines.append(f"{indent_str}    base_dict = base if isinstance(base, dict) else {{}}")
+        lines.append(f"{indent_str}    {input_dict_var} = {value_var} if {value_var} is not None else {{}}")
+        lines.append(f"{indent_str}    {base_dict_var} = base if isinstance(base, dict) else {{}}")
         
         for key, sub_schema in schema.items():
             sub_idx = ctx.var_counter
@@ -203,8 +205,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 secret_val = sub_schema._secret_val
                 
             # Read logic if key is missing
-            lines.append(f"{indent_str}    if {key_obj_name} in input_dict:")
-            lines.append(f"{indent_str}        val_{sub_idx} = input_dict[{key_obj_name}]")
+            lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var}:")
+            lines.append(f"{indent_str}        val_{sub_idx} = {input_dict_var}[{key_obj_name}]")
             
             # If missing
             lines.append(f"{indent_str}    else:")
@@ -232,8 +234,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 m_ind = " " * missing_indent
                 
             # 2. Base value
-            lines.append(f"{m_ind}if {key_obj_name} in base_dict:")
-            lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = base_dict[{key_obj_name}]")
+            lines.append(f"{m_ind}if {key_obj_name} in {base_dict_var}:")
+            lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {base_dict_var}[{key_obj_name}]")
             
             # 3. Default value
             if has_default:
@@ -272,7 +274,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 m_ind = " " * missing_indent
             
             # Run sub-validation
-            lines.append(f"{indent_str}    if {key_obj_name} in input_dict or ({env_key is not None} and os.environ.get({repr(env_key)}) is not None):")
+            lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var} or ({env_key is not None} and os.environ.get({repr(env_key)}) is not None):")
             lines.append(f"{indent_str}        try:")
             
             sub_val_var = f"val_{sub_idx}"

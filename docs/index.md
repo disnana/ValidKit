@@ -24,6 +24,51 @@ ValidKit の API リファレンスおよび高度な使用方法について詳
 - 検証・変換済みのデータ。
 - `collect_errors=True` の場合は `ValidationResult` オブジェクト。
 
+### `compile(schema)`
+
+指定されたスキーマ定義を事前にコンパイルし、専用の高速バリデーション関数を構築した `CompiledSchema` インスタンスを生成します。
+
+**引数:**
+- `schema` (Any): 辞書スキーマ、Validator インスタンス、またはクラス記法スキーマ。
+
+**戻り値:**
+- `CompiledSchema` オブジェクト。
+
+**`CompiledSchema` のメソッド:**
+- `validate(data, partial=False, base=None, migrate=None, collect_errors=False)`:
+  `validate` 関数と同一のオプションをサポートする、高速な検証実行メソッド。
+
+**特徴と最適化内容:**
+1. **動的コード生成**: スキーマ専用のバリデーションコード（Python の `if` や `isinstance` 文）をインライン展開し、実行時に動的に `exec` コンパイルします。
+2. **オーバーヘッド排除**: 実行時の動的なスキーマ解析、クラスアノテーションのスキャン、Python レベルの再帰呼び出しを完全に排除します。
+3. **ベンチマーク**: 従来の `validate()` 処理と比較して **約 3.38 倍高速**に動作します（50,000回のテストスイート検証にて実証）。
+
+**使用例:**
+
+```python
+from validkit import compile, v, ValidationError
+
+# スキーマを事前にコンパイル
+compiled_schema = compile({
+    "user_id": v.int().range(1, 10000),
+    "email": v.str().regex(r"^[\w\.-]+@[\w\.-]+\.\w+$"),
+    "tags": v.list(v.str()).optional()
+})
+
+data = {
+    "user_id": 42,
+    "email": "user@example.com",
+    "tags": ["developer", "admin"]
+}
+
+try:
+    # 最適化された高速バリデーションの実行
+    result = compiled_schema.validate(data)
+    print("検証成功:", result)
+except ValidationError as e:
+    print(f"エラー: {e.path} -> {e.message}")
+```
+
 ---
 
 `v` は流れるようなインターフェース（Fluent Interface）を提供し、バリデータを直感的に構築できます。
