@@ -6,21 +6,27 @@
 - `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
 - 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
-## [1.3.1dev1] - 2026-06-22
+## [1.3.1] - 2026-07-03
 
 ### Added
 - `v.list(...)` に `.min(length)` / `.max(length)` / `.length(length)` を追加し、要素数を検証できるようにしました。
 - 数値バリデータの `.min()` / `.max()` に `exclusive=True`、`.range()` に `exclusive_min=True` / `exclusive_max=True` を追加しました。
 - dataclass と `NamedTuple` をクラススキーマとして渡した場合、検証済みのインスタンスを返すようにしました。
+- `benchmarks/benchmark_validation.py` を追加し、通常の `validate()` と `compile(...).validate()` の速度を依存なしで比較できるようにしました。
+- ValidKit 用の VitePress ドキュメント生成スクリプトと日英ドキュメントを整備しました。
 
 ### Changed
 - `Schema.generate_sample()` がリストの最小要素数と数値の排他的境界を考慮して、有効なサンプルを生成するようになりました。
 - dataclass の `default_factory` を欠損値の補完に使用し、`init=False` フィールドは入力スキーマから除外するようにしました。
 - dataclass / `NamedTuple` の partial 検証は、必須コンストラクタ引数が不足し得るため従来どおり辞書を返します。
+- GitHub Actions の CI / Security / docs preview / deploy ワークフローを ValidKit 用に整理し、GitHub Pages の `validkit.disnana.com` 配置に合わせました。
 
 ### Fixed
 - 排他的な上下限が同値で、有効値が存在しない数値範囲を定義時に拒否するようにしました。
 - 新規コードに含まれていた末尾空白とスタイル上の問題を修正しました。
+- コンパイル済みスキーマで入れ子の `v.list(...)` / `v.dict(...)` を検証したとき、一時変数の衝突により結果が壊れる問題を修正しました。
+- `env(..., decryptor=...)` を含むコンパイル済みスキーマが、復号失敗を `collect_errors=True` で扱うと生成コードの構文エラーになる問題を修正しました。
+- フォールバック検証される特殊バリデータで `.custom(...)` が二重実行される問題を修正しました。
 
 ## [1.3.0dev2] - 2026-03-31
 
