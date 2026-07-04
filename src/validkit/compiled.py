@@ -134,7 +134,7 @@ def compile(schema: Any) -> CompiledSchema:
     lines.append("def validate_compiled(value, root_data, path_prefix='', collect_errors=False, errors=None, partial=False, base=None):")
 
     # Generate verification body
-    body_lines, result_var = _gen_code(preprocessed, ctx, "value", "path_prefix", 4)
+    body_lines, result_var = _gen_code(preprocessed, ctx, "value", "path_prefix", "base", 4)
     lines.extend(body_lines)
     lines.append(f"    return {result_var}")
 
@@ -151,7 +151,14 @@ def compile(schema: Any) -> CompiledSchema:
     return CompiledSchema(schema_orig, validate_func, ctx)
 
 
-def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, indent: int) -> Tuple[List[str], str]:
+def _gen_code(
+    schema: Any,
+    ctx: CompilerContext,
+    value_var: str,
+    path_var: str,
+    base_var: str,
+    indent: int,
+) -> Tuple[List[str], str]:
     lines: List[str] = []
     indent_str = " " * indent
 
@@ -173,7 +180,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         lines.append(f"{indent_str}else:")
         lines.append(f"{indent_str}    {dict_result_var} = {{}}")
         lines.append(f"{indent_str}    {input_dict_var} = {value_var} if {value_var} is not None else {{}}")
-        lines.append(f"{indent_str}    {base_dict_var} = base if isinstance(base, dict) else None")
+        lines.append(f"{indent_str}    {base_dict_var} = {base_var} if isinstance({base_var}, dict) else None")
 
         for key, sub_schema in schema.items():
             sub_idx = ctx.var_counter
@@ -183,6 +190,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             key_path_name = ctx.add_object(str(key))
             missing_sentinel_name = ctx.add_object(object())
             current_path_var = f"current_path_{sub_idx}"
+            sub_base_var = f"sub_base_{sub_idx}"
             should_validate_var = f"should_validate_{sub_idx}"
 
             # Setup path variable
@@ -190,7 +198,6 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 lines.append(f"{indent_str}    {current_path_var} = {key_path_name}")
             else:
                 lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_path_name} if {path_var} else {key_path_name}")
-            lines.append(f"{indent_str}    {should_validate_var} = False")
 
             # Sub-schema options validation setup
             is_optional = False
@@ -216,8 +223,14 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
 
             # Read logic if key is missing
             lines.append(f"{indent_str}    val_{sub_idx} = {input_dict_var}.get({key_obj_name}, {missing_sentinel_name})")
+            lines.append(f"{indent_str}    {sub_base_var} = {base_dict_var}.get({key_obj_name}) if {base_dict_var} is not None else None")
             lines.append(f"{indent_str}    if val_{sub_idx} is not {missing_sentinel_name}:")
-            lines.append(f"{indent_str}        {should_validate_var} = True")
+
+            sub_val_var = f"val_{sub_idx}"
+            sub_lines, sub_result_var = _gen_code(sub_schema, ctx, sub_val_var, current_path_var, sub_base_var, indent + 8)
+            lines.extend(sub_lines)
+
+            lines.append(f"{indent_str}        {dict_result_var}[{key_obj_name}] = {sub_result_var}")
 
             # If missing
             lines.append(f"{indent_str}    else:")
@@ -226,6 +239,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
 
             # 1. Environment variables
             if env_key is not None:
+                lines.append(f"{m_ind}{should_validate_var} = False")
                 lines.append(f"{m_ind}env_val = os.environ.get({repr(env_key)})")
                 lines.append(f"{m_ind}if env_val is not None:")
                 if env_decryptor_name is not None:
@@ -246,8 +260,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 m_ind = " " * missing_indent
 
             # 2. Base value
-            lines.append(f"{m_ind}if {base_dict_var} is not None and {key_obj_name} in {base_dict_var}:")
-            lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {base_dict_var}[{key_obj_name}]")
+            lines.append(f"{m_ind}if {sub_base_var} is not None:")
+            lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {sub_base_var}")
 
             # 3. Default value
             if has_default:
@@ -285,18 +299,21 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 missing_indent -= 4
                 m_ind = " " * missing_indent
 
-            # Run sub-validation
-            lines.append(f"{indent_str}    if {should_validate_var}:")
-            lines.append(f"{indent_str}        try:")
+                # Environment values are the only missing-key branch that still
+                # needs validation after lookup/decryption succeeds.
+                lines.append(f"{m_ind}if {should_validate_var}:")
 
-            sub_val_var = f"val_{sub_idx}"
-            sub_lines, sub_result_var = _gen_code(sub_schema, ctx, sub_val_var, current_path_var, indent + 12)
-            lines.extend(sub_lines)
+                env_sub_lines, env_sub_result_var = _gen_code(
+                    sub_schema,
+                    ctx,
+                    sub_val_var,
+                    current_path_var,
+                    sub_base_var,
+                    missing_indent + 4,
+                )
+                lines.extend(env_sub_lines)
 
-            lines.append(f"{indent_str}            {dict_result_var}[{key_obj_name}] = {sub_result_var}")
-            lines.append(f"{indent_str}        except ValidationError:")
-            lines.append(f"{indent_str}            if not collect_errors:")
-            lines.append(f"{indent_str}                raise")
+                lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {env_sub_result_var}")
 
         return lines, dict_result_var
 
@@ -310,14 +327,14 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         if schema._when_condition is not None:
             when_cond_name = ctx.add_object(schema._when_condition)
             lines.append(f"{indent_str}if not {when_cond_name}(root_data):")
-            lines.append(f"{indent_str}    {res_var} = base")
+            lines.append(f"{indent_str}    {res_var} = {base_var}")
             lines.append(f"{indent_str}else:")
             indent += 4
             indent_str = " " * indent
 
         if schema._optional:
             lines.append(f"{indent_str}if {value_var} is None:")
-            lines.append(f"{indent_str}    {res_var} = base if base is not None else None")
+            lines.append(f"{indent_str}    {res_var} = {base_var} if {base_var} is not None else None")
             lines.append(f"{indent_str}else:")
             indent += 4
             indent_str = " " * indent
@@ -420,7 +437,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}    {list_item_path_var} = {path_var} + '[' + str({list_index_var}) + ']' if {path_var} else '[' + str({list_index_var}) + ']'")
 
             preprocessed_item = _preprocess_schema(schema._item_validator)
-            item_lines, sub_res_var = _gen_code(preprocessed_item, ctx, list_item_var, list_item_path_var, try_indent + 4)
+            item_lines, sub_res_var = _gen_code(preprocessed_item, ctx, list_item_var, list_item_path_var, "None", try_indent + 4)
             lines.extend(item_lines)
             lines.append(f"{try_indent_str}    {list_res_var}.append({sub_res_var})")
             lines.append(f"{try_indent_str}val_final_{idx} = {list_res_var}")
@@ -441,7 +458,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
             lines.append(f"{try_indent_str}    {dict_item_path_var} = {path_var} + '.' + str({dict_key_var}) if {path_var} else str({dict_key_var})")
 
             preprocessed_val = _preprocess_schema(schema._value_validator)
-            val_lines, sub_res_var = _gen_code(preprocessed_val, ctx, dict_value_var, dict_item_path_var, try_indent + 4)
+            val_lines, sub_res_var = _gen_code(preprocessed_val, ctx, dict_value_var, dict_item_path_var, "None", try_indent + 4)
             lines.extend(val_lines)
             lines.append(f"{try_indent_str}    {dict_res_var}[{dict_key_var}] = {sub_res_var}")
             lines.append(f"{try_indent_str}val_final_{idx} = {dict_res_var}")
