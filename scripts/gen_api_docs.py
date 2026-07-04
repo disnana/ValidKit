@@ -417,6 +417,12 @@ def generate_performance(lang: str) -> str:
     ## {"読み方" if ja else "How to read results"}
 
     {"`speedup` が 1 より大きいほど、コンパイル版が高速です。特殊バリデータやカスタム処理が多い場合は通常版との差が小さくなります。" if ja else "`speedup` greater than 1 means compiled validation is faster. Specialized validators and custom callbacks reduce the gap."}
+
+    ## {"コンパイル版の最適化対象" if ja else "What compiled validation optimizes"}
+
+    {"`compile(schema)` は、通常検証と `collect_errors=True` の検証で別々の生成関数を使います。ホットパスでは、同じスキーマを一度だけコンパイルして再利用してください。" if ja else "`compile(schema)` uses separate generated functions for normal validation and `collect_errors=True`. Compile a schema once and reuse it on hot paths."}
+
+    {"`collect_errors=True` は複数の `ErrorDetail` を作成するため、通常検証より速度差は小さくなります。大量の正常データを検証する経路では通常検証、入力全体のエラー一覧が必要な経路では `collect_errors=True` を使い分けるのがおすすめです。" if ja else "`collect_errors=True` creates multiple `ErrorDetail` objects, so the speedup is usually smaller than normal validation. Prefer normal validation for high-volume valid payloads, and use `collect_errors=True` when callers need a full error list."}
     """
 
 

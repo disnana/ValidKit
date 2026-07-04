@@ -182,3 +182,34 @@ def test_compile_fallback_validator_custom_runs_once():
 
     schema.validate({"dt": datetime.datetime(2024, 1, 1)})
     assert len(calls) == 1
+
+
+def test_compile_nested_base_is_passed_to_child_schema():
+    schema = compile({
+        "user": {
+            "name": v.str().optional(),
+            "age": v.int(),
+        }
+    })
+
+    result = schema.validate(
+        {"user": {"age": 30}},
+        partial=True,
+        base={"user": {"name": "Alice"}},
+    )
+
+    assert result == {"user": {"name": "Alice", "age": 30}}
+
+
+def test_compile_when_condition_uses_field_base_when_skipped():
+    schema = compile({
+        "enabled": v.bool(),
+        "token": v.str().when(lambda data: data.get("enabled") is True),
+    })
+
+    result = schema.validate(
+        {"enabled": False},
+        base={"token": "from-base"},
+    )
+
+    assert result == {"enabled": False, "token": "from-base"}
