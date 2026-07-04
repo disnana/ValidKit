@@ -1,7 +1,8 @@
 import re
 import os
 import builtins
-from typing import Any, Dict, List, Optional, Tuple
+import dataclasses
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from .validator import ValidationError, ErrorDetail, ValidationResult, _is_class_schema, _class_to_schema
 from .v import (
     Validator,
@@ -37,6 +38,12 @@ class CompiledSchema:
         self._schema_orig = schema_orig
         self._validate_func = validate_func
         self._context = context
+        self._class_builder: Optional[Callable[..., Any]] = None
+        if isinstance(schema_orig, type) and _is_class_schema(schema_orig):
+            if dataclasses.is_dataclass(schema_orig):
+                self._class_builder = schema_orig
+            elif hasattr(schema_orig, "_make") and hasattr(schema_orig, "_fields"):
+                self._class_builder = schema_orig
 
     def validate(
         self,
@@ -62,6 +69,10 @@ class CompiledSchema:
                         else:
                             data[old_key] = result_action
 
+        if not collect_errors and not partial and base is None:
+            validated_data = self._validate_func(data, data)
+            return self._convert_class_result(validated_data, partial)
+
         errors: List[ErrorDetail] = []
         try:
             validated_data = self._validate_func(
@@ -81,19 +92,12 @@ class CompiledSchema:
         if collect_errors:
             return ValidationResult(validated_data, errors)
 
-        # Convert back to dataclass/NamedTuple if needed (matching validator.py)
-        if (
-            not partial
-            and isinstance(self._schema_orig, type)
-            and _is_class_schema(self._schema_orig)
-            and isinstance(validated_data, dict)
-        ):
-            import dataclasses
-            if dataclasses.is_dataclass(self._schema_orig):
-                return self._schema_orig(**validated_data)
-            if hasattr(self._schema_orig, "_make") and hasattr(self._schema_orig, "_fields"):
-                return self._schema_orig(**validated_data)
+        return self._convert_class_result(validated_data, partial)
 
+    def _convert_class_result(self, validated_data: Any, partial: bool) -> Any:
+        # Convert back to dataclass/NamedTuple if needed (matching validator.py)
+        if not partial and self._class_builder is not None and isinstance(validated_data, dict):
+            return self._class_builder(**validated_data)
         return validated_data
 
 
@@ -169,7 +173,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
         lines.append(f"{indent_str}else:")
         lines.append(f"{indent_str}    {dict_result_var} = {{}}")
         lines.append(f"{indent_str}    {input_dict_var} = {value_var} if {value_var} is not None else {{}}")
-        lines.append(f"{indent_str}    {base_dict_var} = base if isinstance(base, dict) else {{}}")
+        lines.append(f"{indent_str}    {base_dict_var} = base if isinstance(base, dict) else None")
 
         for key, sub_schema in schema.items():
             sub_idx = ctx.var_counter
@@ -177,11 +181,15 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
 
             key_obj_name = ctx.add_object(key)
             key_path_name = ctx.add_object(str(key))
+            missing_sentinel_name = ctx.add_object(object())
             current_path_var = f"current_path_{sub_idx}"
             should_validate_var = f"should_validate_{sub_idx}"
 
             # Setup path variable
-            lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_path_name} if {path_var} else {key_path_name}")
+            if path_var == "path_prefix" and indent == 4:
+                lines.append(f"{indent_str}    {current_path_var} = {key_path_name}")
+            else:
+                lines.append(f"{indent_str}    {current_path_var} = {path_var} + '.' + {key_path_name} if {path_var} else {key_path_name}")
             lines.append(f"{indent_str}    {should_validate_var} = False")
 
             # Sub-schema options validation setup
@@ -207,8 +215,8 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 secret_val = sub_schema._secret_val
 
             # Read logic if key is missing
-            lines.append(f"{indent_str}    if {key_obj_name} in {input_dict_var}:")
-            lines.append(f"{indent_str}        val_{sub_idx} = {input_dict_var}[{key_obj_name}]")
+            lines.append(f"{indent_str}    val_{sub_idx} = {input_dict_var}.get({key_obj_name}, {missing_sentinel_name})")
+            lines.append(f"{indent_str}    if val_{sub_idx} is not {missing_sentinel_name}:")
             lines.append(f"{indent_str}        {should_validate_var} = True")
 
             # If missing
@@ -238,7 +246,7 @@ def _gen_code(schema: Any, ctx: CompilerContext, value_var: str, path_var: str, 
                 m_ind = " " * missing_indent
 
             # 2. Base value
-            lines.append(f"{m_ind}if {key_obj_name} in {base_dict_var}:")
+            lines.append(f"{m_ind}if {base_dict_var} is not None and {key_obj_name} in {base_dict_var}:")
             lines.append(f"{m_ind}    {dict_result_var}[{key_obj_name}] = {base_dict_var}[{key_obj_name}]")
 
             # 3. Default value

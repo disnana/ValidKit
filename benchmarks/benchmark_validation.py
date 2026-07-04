@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from validkit import compile, v, validate  # noqa: E402
-
+import validkit  # noqa: E402
+print(validkit.__version__)
 
 Case = tuple[str, dict[str, Any], dict[str, Any], int, dict[str, Any]]
 
