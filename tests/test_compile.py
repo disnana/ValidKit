@@ -67,6 +67,98 @@ def test_compile_list_and_dict_validators():
     with pytest.raises(ValidationError):
         schema.validate({"tags": ["a"], "scores": {"math": 95}})
 
+
+def test_compile_copies_pure_list_and_dict_validator_inputs():
+    schema = compile({
+        "tags": v.list(v.str().min(2)),
+        "scores": v.dict(str, v.int().range(0, 100)),
+    })
+
+    data = {
+        "tags": ["python", "validkit"],
+        "scores": {"math": 95, "science": 100},
+    }
+
+    result = schema.validate(data)
+    assert result == data
+    assert result is not data
+    assert result["tags"] is not data["tags"]
+    assert result["scores"] is not data["scores"]
+
+    result["tags"].append("new")
+    result["scores"]["english"] = 80
+    assert data == {
+        "tags": ["python", "validkit"],
+        "scores": {"math": 95, "science": 100},
+    }
+
+
+def test_compile_copies_nested_pure_collection_inputs():
+    schema = compile({
+        "user": {
+            "id": v.int(),
+            "profile": {
+                "name": v.str().min(3),
+                "tags": v.list(v.str().min(2)),
+            },
+        },
+        "metrics": v.dict(str, v.list(v.int())),
+    })
+
+    data = {
+        "user": {"id": 1, "profile": {"name": "Alice", "tags": ["py", "vk"]}},
+        "metrics": {"daily": [1, 2, 3]},
+    }
+    result = schema.validate(data)
+
+    assert result == data
+    assert result["user"] is not data["user"]
+    assert result["user"]["profile"] is not data["user"]["profile"]
+    assert result["user"]["profile"]["tags"] is not data["user"]["profile"]["tags"]
+    assert result["metrics"] is not data["metrics"]
+    assert result["metrics"]["daily"] is not data["metrics"]["daily"]
+
+
+def test_compile_does_not_preserve_transforming_list_inputs():
+    schema = compile({"items": v.list(v.int().coerce())})
+    data = {"items": ("1", "2")}
+
+    result = schema.validate(data)
+
+    assert result == {"items": [1, 2]}
+    assert result is not data
+
+
+def test_compile_pure_tuple_list_input_still_returns_list():
+    schema = compile({"items": v.list(v.int())})
+    data = {"items": (1, 2)}
+
+    result = schema.validate(data)
+
+    assert result == {"items": [1, 2]}
+    assert isinstance(result["items"], list)
+    assert result is not data
+
+
+def test_compile_nested_tuple_list_inputs_still_return_lists():
+    schema = compile({"matrix": v.list(v.list(v.int()))})
+    data = {"matrix": [(1, 2), (3,)]}
+
+    result = schema.validate(data)
+
+    assert result == {"matrix": [[1, 2], [3]]}
+    assert all(isinstance(row, list) for row in result["matrix"])
+
+
+def test_compile_dict_tuple_list_values_still_return_lists():
+    schema = compile({"metrics": v.dict(str, v.list(v.int()))})
+    data = {"metrics": {"daily": (1, 2, 3)}}
+
+    result = schema.validate(data)
+
+    assert result == {"metrics": {"daily": [1, 2, 3]}}
+    assert isinstance(result["metrics"]["daily"], list)
+
 def test_compile_collect_errors():
     schema = compile({
         "id": v.int(),

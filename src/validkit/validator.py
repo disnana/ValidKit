@@ -17,6 +17,7 @@ from collections.abc import Mapping
 import types as _types
 import math
 import dataclasses
+import weakref
 from .v import (
     Validator,
     v,
@@ -39,6 +40,7 @@ _UnionType: Optional[type] = getattr(_types, "UnionType", None)
 
 # Basic Python types supported as schema shorthand (str, int, float, bool)
 _BASIC_TYPES = (str, int, float, bool)
+_CLASS_SCHEMA_CACHE: "weakref.WeakKeyDictionary[type, Dict[str, Any]]" = weakref.WeakKeyDictionary()
 
 
 def _get_class_annotations(schema: type) -> Dict[str, Any]:
@@ -305,6 +307,10 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
     Returns:
         validkit のスキーマ辞書。
     """
+    cached = _CLASS_SCHEMA_CACHE.get(cls)
+    if cached is not None:
+        return cached
+
     schema: Dict[str, Any] = {}
 
     # 1. Collect fields defined as Validator class attributes (with or without annotation)
@@ -352,6 +358,7 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
 
         schema[key] = _type_hint_to_validator(type_hint, has_default=has_default, default_val=default_val)
 
+    _CLASS_SCHEMA_CACHE[cls] = schema
     return schema
 
 

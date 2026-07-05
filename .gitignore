@@ -6,3 +6,4 @@ test.py
 LOCAL/
 docs/site/node_modules/
 .tmp-pytest/
+.pytest_deps/
