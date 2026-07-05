@@ -3,6 +3,8 @@
 [![CI](https://github.com/disnana/ValidKit/actions/workflows/ci.yml/badge.svg)](https://github.com/disnana/ValidKit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/validkit-py?label=PyPI)](https://pypi.org/project/validkit-py/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python versions](https://img.shields.io/pypi/pyversions/validkit-py.svg)](https://pypi.org/project/validkit-py/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/validkit-py?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/validkit-py)
 
 ValidKit は、「直感的なスキーマ定義」と「日本語キーへの完全対応」を特徴とする、Python 用の軽量バリデーションライブラリです。
 
