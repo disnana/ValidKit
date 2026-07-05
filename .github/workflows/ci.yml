@@ -201,7 +201,6 @@ jobs:
     - name: Run benchmarks
       run: |
         python benchmarks/benchmark_validation.py --iterations 5000 | tee benchmark-results.md
-        cat benchmark-results.md >> $GITHUB_STEP_SUMMARY
 
     - name: Upload benchmark results
       uses: actions/upload-artifact@v4
