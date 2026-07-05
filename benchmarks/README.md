@@ -1,11 +1,15 @@
 # ValidKit Benchmarks
 
-This folder contains small, dependency-free benchmarks for comparing regular
-`validate()` calls with precompiled `compile(...).validate(...)` calls.
+This folder contains small benchmarks for comparing:
+
+- Pydantic `BaseModel.model_validate(...)`
+- regular ValidKit `validate(...)`
+- precompiled ValidKit `compile(...).validate(...)`
 
 Run from the repository root:
 
 ```bash
+python -m pip install -e .[benchmark]
 python benchmarks/benchmark_validation.py
 python benchmarks/benchmark_validation.py --json
 ```
