@@ -172,11 +172,50 @@ jobs:
         retention-days: 7
 
   # ============================================
+  # Benchmark Job - Runs alongside regular checks
+  # ============================================
+  benchmark:
+    name: Benchmark (Pydantic vs ValidKit)
+    needs: should-run
+    if: needs.should-run.outputs.run_ci == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ env.DEFAULT_PYTHON_VERSION }}
+
+    - name: Install benchmark dependencies
+      run: |
+        uv pip install --system -e ".[benchmark]"
+
+    - name: Run benchmarks
+      run: |
+        python benchmarks/benchmark_validation.py --iterations 5000 | tee benchmark-results.md
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results
+        path: benchmark-results.md
+        retention-days: 7
+
+  # ============================================
   # All-Green Summary - Always runs
   # ============================================
   summary:
     name: ✅ All Checks
-    needs: [should-run, lint, type, test]
+    needs: [should-run, lint, type, test, benchmark]
     runs-on: ubuntu-latest
     timeout-minutes: 3
     if: always()
@@ -189,6 +228,7 @@ jobs:
         echo "📝 lint → ${{ needs.lint.result == 'success' && '✓ success' || format('✗ {0}', needs.lint.result) }} [required]"
         echo "📝 type → ${{ needs.type.result == 'success' && '✓ success' || format('✗ {0}', needs.type.result) }} [required]"
         echo "📝 test → ${{ needs.test.result == 'success' && '✓ success' || format('✗ {0}', needs.test.result) }} [required]"
+        echo "📝 benchmark → ${{ needs.benchmark.result == 'success' && '✓ success' || format('✗ {0}', needs.benchmark.result) }} [required]"
         echo ""
         
         # If CI was skipped, all jobs will be 'skipped' - that's OK
@@ -202,6 +242,7 @@ jobs:
         if [ "${{ needs.lint.result }}" != "success" ]; then FAILED=true; fi
         if [ "${{ needs.type.result }}" != "success" ]; then FAILED=true; fi
         if [ "${{ needs.test.result }}" != "success" ]; then FAILED=true; fi
+        if [ "${{ needs.benchmark.result }}" != "success" ]; then FAILED=true; fi
         
         if [ "$FAILED" = true ]; then
           echo "❌ One or more CI checks failed."
@@ -209,6 +250,13 @@ jobs:
         else
           echo "# ✓ All CI checks succeeded 🎉🎉🎉"
         fi
+
+    - name: Download benchmark results
+      uses: actions/download-artifact@v4
+      if: always() && needs.benchmark.result == 'success'
+      with:
+        name: benchmark-results
+        path: benchmark-results
 
     - name: Generate Summary
       if: always()
@@ -241,10 +289,44 @@ jobs:
           skipped) echo "| 🧪 Tests | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY ;;
           *) echo "| 🧪 Tests | ❌ Failed |" >> $GITHUB_STEP_SUMMARY ;;
         esac
+
+        # Benchmark status
+        case "${{ needs.benchmark.result }}" in
+          success) echo "| 📊 Benchmarks | ✅ Passed |" >> $GITHUB_STEP_SUMMARY ;;
+          cancelled) echo "| 📊 Benchmarks | ⚠️ Cancelled |" >> $GITHUB_STEP_SUMMARY ;;
+          skipped) echo "| 📊 Benchmarks | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY ;;
+          *) echo "| 📊 Benchmarks | ❌ Failed |" >> $GITHUB_STEP_SUMMARY ;;
+        esac
         
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
         echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        case "${{ needs.benchmark.result }}" in
+          success)
+            if [ -f benchmark-results/benchmark-results.md ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              cat benchmark-results/benchmark-results.md >> $GITHUB_STEP_SUMMARY
+            else
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Benchmark job passed, but the benchmark results artifact was not found." >> $GITHUB_STEP_SUMMARY
+            fi
+            ;;
+          skipped)
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Benchmarks were skipped." >> $GITHUB_STEP_SUMMARY
+            ;;
+          cancelled)
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Benchmarks were cancelled before results were produced." >> $GITHUB_STEP_SUMMARY
+            ;;
+          *)
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Benchmarks failed. Check the benchmark job logs for details." >> $GITHUB_STEP_SUMMARY
+            ;;
+        esac
         
         if [ "${{ github.ref }}" == "refs/heads/main" ]; then
           echo "" >> $GITHUB_STEP_SUMMARY

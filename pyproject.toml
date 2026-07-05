@@ -20,6 +20,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+benchmark = [
+    "pydantic>=2,<3",
+]
+
 [project.urls]
 Homepage = "https://github.com/disnana/ValidKit"
 
