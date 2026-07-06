@@ -1,8 +1,9 @@
 # パフォーマンスとベンチマーク
 
-ベンチマークは `benchmarks/benchmark_validation.py` にあります。外部依存なしで通常版とコンパイル版を比較できます。
+ベンチマークは `benchmarks/benchmark_validation.py` にあります。Pydantic との比較も行うため、実行前に benchmark extra を入れてください。
 
 ```bash
+python -m pip install -e ".[benchmark]"
 python benchmarks/benchmark_validation.py
 python benchmarks/benchmark_validation.py --json
 ```
