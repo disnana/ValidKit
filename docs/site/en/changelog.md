@@ -6,6 +6,19 @@
 - `1.2.1` は `src/validkit/__init__.py` の `__version__ = "1.2.1"` と 2026-03-07 の関連コミットを基準に整理しています（現時点で対応タグは未確認）。
 - 変更点は読みやすさのために `Added` / `Changed` / `Fixed` に要約しています。
 
+## [1.3.3dev1] - 2026-07-05
+
+### Changed
+- Cached class-schema conversion results to reduce repeated validation overhead for the same class schema.
+- Added compatibility tests that keep the Python compiled path from aliasing mutable input data.
+- Added an experimental Rust/PyO3 native validation core, published as `validkit-py-core`. Supported pure dict/list/str/int/float/bool schemas can now use the startup-selected native path from `compile(...).validate(...)`.
+- Prioritized native-path performance: successful validations that do not need output-shape changes now return the validated input object directly to avoid unnecessary copies.
+- Added automatic fallback to the existing Python path when the native extension is unavailable, `VALIDKIT_DISABLE_NATIVE=1` is set, a schema uses unsupported features, or validation uses `collect_errors`, `partial`, `base`, or `migrate`.
+- Added `--native-mode auto|python|native|both` to the benchmark so Python and native compiled paths can be compared even when the native extension is absent.
+
+### Fixed
+- Kept unsupported exclusive numeric bounds and list length constraints on the Python-compatible path instead of incorrectly accepting them in the Rust bridge.
+
 ## [1.3.2] - 2026-07-04
 
 ### Changed

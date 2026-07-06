@@ -7,3 +7,13 @@ LOCAL/
 docs/site/node_modules/
 .tmp-pytest/
 .pytest_deps/
+src/validkit/.workflow_sessions/
+src/validkit/workflow.log
+workflow.log
+.workflow_sessions/
+.workflow_cache/
+src/validkit_core/target/
+src/validkit_core/Cargo.lock
+src/validkit/_validkit_core*.pyd
+validkit_core*.pyd
+dist-native-local/

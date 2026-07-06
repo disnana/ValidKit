@@ -1,0 +1,232 @@
+name: Native Core
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - "src/validkit/__init__.py"
+      - "src/validkit_core/**"
+  workflow_dispatch:
+    inputs:
+      build_arm:
+        description: "Build ARM wheels in this manual run"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "23 3 * * 1"
+
+concurrency:
+  group: native-core-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DEFAULT_PYTHON_VERSION: "3.11"
+
+jobs:
+  plan:
+    name: Plan Native Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      cargo_version: ${{ steps.plan.outputs.cargo_version }}
+      should_build: ${{ steps.plan.outputs.should_build }}
+      should_publish: ${{ steps.plan.outputs.should_publish }}
+      build_arm: ${{ steps.plan.outputs.build_arm }}
+      version_exists: ${{ steps.plan.outputs.version_exists }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Decide build and publish mode
+        id: plan
+        shell: bash
+        run: |
+          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/validkit/__init__.py || echo "0.0.0")
+          CARGO_VERSION=$(echo "$VERSION" | sed -E 's/(alpha|a|beta|b|rc|dev)([0-9]*)$/-\1\2/I')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "cargo_version=$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+
+          CORE_CHANGED=false
+          ACTIONS_CHANGED=false
+          VERSION_CHANGED_FILE=false
+          if [ "${{ github.event_name }}" = "push" ]; then
+            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD || true)
+            echo "$CHANGED_FILES"
+            if echo "$CHANGED_FILES" | grep -q '^src/validkit_core/'; then CORE_CHANGED=true; fi
+            if echo "$CHANGED_FILES" | grep -q '^\.github/workflows/'; then ACTIONS_CHANGED=true; fi
+            if echo "$CHANGED_FILES" | grep -q '^src/validkit/__init__\.py$'; then VERSION_CHANGED_FILE=true; fi
+          fi
+
+          VERSION_EXISTS=false
+          if curl -fsS "https://pypi.org/pypi/validkit-py-core/${VERSION}/json" > /dev/null 2>&1; then
+            VERSION_EXISTS=true
+          fi
+          echo "version_exists=$VERSION_EXISTS" >> "$GITHUB_OUTPUT"
+
+          SHOULD_BUILD=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            SHOULD_BUILD=true
+          elif [ "$CORE_CHANGED" = "true" ] || [ "$ACTIONS_CHANGED" = "true" ] || [ "$VERSION_CHANGED_FILE" = "true" ]; then
+            SHOULD_BUILD=true
+          fi
+
+          BUILD_ARM=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            BUILD_ARM=true
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.build_arm }}" = "true" ]; then
+            BUILD_ARM=true
+          fi
+
+          SHOULD_PUBLISH=false
+          if [ "${{ github.event_name }}" = "push" ] && [ "$SHOULD_BUILD" = "true" ] && [ "$VERSION_EXISTS" = "false" ]; then
+            SHOULD_PUBLISH=true
+          fi
+
+          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+          echo "build_arm=$BUILD_ARM" >> "$GITHUB_OUTPUT"
+          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+
+  build-native:
+    name: Build Native (${{ matrix.target.name }}, py${{ matrix.python-version }})
+    needs: plan
+    if: needs.plan.outputs.should_build == 'true' && needs.plan.outputs.build_arm != 'true'
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-x86_64
+            os: ubuntu-latest
+          - name: windows-x86_64
+            os: windows-latest
+          - name: macos-x86_64
+            os: macos-13
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: python -m pip install "maturin>=1.7,<2"
+
+      - name: Sync crate version
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path("src/validkit_core/Cargo.toml")
+          text = path.read_text()
+          text = re.sub(r'^version = "[^"]+"', 'version = "${{ needs.plan.outputs.cargo_version }}"', text, count=1, flags=re.M)
+          path.write_text(text)
+          PY
+
+      - name: Build wheel
+        run: python -m maturin build --release --manifest-path src/validkit_core/Cargo.toml --out dist-native
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: validkit-py-core-${{ needs.plan.outputs.version }}-${{ matrix.target.name }}-py${{ matrix.python-version }}
+          path: dist-native/*
+          retention-days: 14
+
+  build-native-arm:
+    name: Build Native ARM (${{ matrix.target.name }}, py${{ matrix.python-version }})
+    needs: plan
+    if: needs.plan.outputs.should_build == 'true' && needs.plan.outputs.build_arm == 'true'
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+          - name: macos-aarch64
+            os: macos-14
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: python -m pip install "maturin>=1.7,<2"
+
+      - name: Sync crate version
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path("src/validkit_core/Cargo.toml")
+          text = path.read_text()
+          text = re.sub(r'^version = "[^"]+"', 'version = "${{ needs.plan.outputs.cargo_version }}"', text, count=1, flags=re.M)
+          path.write_text(text)
+          PY
+
+      - name: Build wheel
+        run: python -m maturin build --release --manifest-path src/validkit_core/Cargo.toml --out dist-native
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: validkit-py-core-${{ needs.plan.outputs.version }}-${{ matrix.target.name }}-py${{ matrix.python-version }}
+          path: dist-native/*
+          retention-days: 14
+
+  publish-native:
+    name: Publish Native Wheels
+    needs: [plan, build-native]
+    if: needs.plan.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download native wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: validkit-py-core-${{ needs.plan.outputs.version }}-*
+          path: dist-native
+          merge-multiple: true
+
+      - name: Publish native wheels to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist-native
+
+  summary:
+    name: Native Summary
+    needs: [plan, build-native, build-native-arm, publish-native]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write summary
+        run: |
+          echo "## Native Core" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: ${{ needs.plan.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build ARM: ${{ needs.plan.outputs.build_arm }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version already on PyPI: ${{ needs.plan.outputs.version_exists }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Publish: ${{ needs.plan.outputs.should_publish }}" >> "$GITHUB_STEP_SUMMARY"

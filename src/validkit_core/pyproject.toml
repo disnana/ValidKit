@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "validkit-py-core"
+dynamic = ["version"]
+description = "Optional native validation core for ValidKit."
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Disnana", email = "support@disnana.com" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.maturin]
+module-name = "validkit_core"
+strip = true
