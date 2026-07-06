@@ -1,8 +1,9 @@
 # パフォーマンスとベンチマーク
 
-ベンチマークは `benchmarks/benchmark_validation.py` にあります。外部依存なしで通常版とコンパイル版を比較できます。
+ベンチマークは `benchmarks/benchmark_validation.py` にあります。Pydantic との比較も行うため、実行前に benchmark extra を入れてください。
 
 ```bash
+python -m pip install -e ".[benchmark]"
 python benchmarks/benchmark_validation.py
 python benchmarks/benchmark_validation.py --json
 ```
@@ -22,4 +23,4 @@ python benchmarks/benchmark_validation.py --json
 
 `compile(schema)` は、通常検証と `collect_errors=True` の検証で別々の生成関数を使います。ホットパスでは、同じスキーマを一度だけコンパイルして再利用してください。
 
-`collect_errors=True` は複数の `ErrorDetail` を作成するため、通常検証より速度差は小さくなります。大量の正常データを検証する経路では通常検証、入力全体のエラー一覧が必要な経路では `collect_errors=True` を使い分けるのがおすすめです。
+`collect_errors=True` は `ValidationResult` を返します。詳細な `ErrorDetail` は `result.errors` にアクセスした時点で作られるため、エラー件数だけを見たい場合は `result.has_errors` や `result.error_count` を使うと余計なオブジェクト生成を避けられます。大量の正常データを検証する経路では通常検証、入力全体のエラー一覧が必要な経路では `collect_errors=True` を使い分けるのがおすすめです。

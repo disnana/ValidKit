@@ -1,8 +1,9 @@
 # Performance and Benchmarks
 
-Benchmarks live in `benchmarks/benchmark_validation.py`. They compare normal and compiled validation without external dependencies.
+Benchmarks live in `benchmarks/benchmark_validation.py`. They also compare against Pydantic, so install the benchmark extra before running them.
 
 ```bash
+python -m pip install -e ".[benchmark]"
 python benchmarks/benchmark_validation.py
 python benchmarks/benchmark_validation.py --json
 ```
