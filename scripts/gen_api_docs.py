@@ -23,7 +23,8 @@ v_module = importlib.import_module("validkit.v")
 
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = inspect.cleandoc(content).strip()
+    lines = content.strip("\n").splitlines()
+    text = "\n".join(line[4:] if line.startswith("    ") else line for line in lines).strip()
     path.write_text(text + "\n", encoding="utf-8")
 
 
