@@ -22,8 +22,32 @@ if (-not $Python) {
     $Python = $pythonCmd.Source
 }
 
-function Invoke-Python {
+function Invoke-PythonRaw {
     & $Python @args
+}
+
+function Invoke-Python {
+    Invoke-PythonRaw @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python command failed with exit code ${LASTEXITCODE}: $Python $args"
+    }
+}
+
+function Invoke-Checked {
+    & $args[0] @($args | Select-Object -Skip 1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed with exit code ${LASTEXITCODE}: $args"
+    }
+}
+
+function Remove-StaleRootCore {
+    $staleCore = @()
+    $staleCore += Get-ChildItem -Path $RootDir -File -Filter "validkit_core*.pyd" -ErrorAction SilentlyContinue
+    $staleCore += Get-ChildItem -Path $RootDir -File -Filter "validkit_core*.so" -ErrorAction SilentlyContinue
+    foreach ($file in $staleCore) {
+        Write-Host "==> Removing stale root native core $($file.Name)"
+        Remove-Item -LiteralPath $file.FullName -Force
+    }
 }
 
 Write-Host "==> Python"
@@ -37,14 +61,17 @@ if (-not $SkipInstall) {
         Write-Host "==> Installing validkit-py in editable mode"
         Invoke-Python -m pip install -e .
     }
-} else {
-    $srcPath = Join-Path $RootDir "src"
-    if ($env:PYTHONPATH) {
-        $env:PYTHONPATH = "$srcPath;$env:PYTHONPATH"
-    } else {
-        $env:PYTHONPATH = "$srcPath"
-    }
 }
+
+$srcPath = Join-Path $RootDir "src"
+if ($env:PYTHONPATH) {
+    $env:PYTHONPATH = "$srcPath;$env:PYTHONPATH"
+} else {
+    $env:PYTHONPATH = "$srcPath"
+}
+
+Write-Host "==> ValidKit import check"
+Invoke-Python -c "import validkit; print('validkit:', validkit.__version__)"
 
 $pytestDeps = Join-Path $RootDir ".pytest_deps"
 if (Test-Path $pytestDeps) {
@@ -56,28 +83,49 @@ if (Test-Path $pytestDeps) {
 }
 
 if (-not $SkipCore) {
+    Remove-StaleRootCore
+
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         throw "cargo was not found. Install Rust or rerun with -SkipCore."
     }
 
     Write-Host "==> Rust"
-    cargo --version
+    Invoke-Checked cargo --version
 
-    Invoke-Python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('maturin') else 1)"
+    Invoke-PythonRaw -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('maturin') else 1)"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "==> Installing maturin"
-        Invoke-Python -m pip install "maturin>=1.7,<2"
+        Write-Host "==> Installing maturin into .build-tools"
+        $buildTools = Join-Path $RootDir ".build-tools"
+        Invoke-Python -m pip install --upgrade --target $buildTools "maturin>=1.7,<2"
+        if ($env:PYTHONPATH) {
+            $env:PYTHONPATH = "$buildTools;$env:PYTHONPATH"
+        } else {
+            $env:PYTHONPATH = "$buildTools"
+        }
+    }
+
+    $maturinCommand = Get-Command maturin -ErrorAction SilentlyContinue
+    if ($maturinCommand) {
+        $maturinExe = $maturinCommand.Source
+    } else {
+        $maturinExe = Join-Path $RootDir ".build-tools/bin/maturin.exe"
+        if (-not (Test-Path $maturinExe)) {
+            $maturinExe = Join-Path $RootDir ".build-tools/bin/maturin"
+        }
+    }
+    if (-not (Test-Path $maturinExe)) {
+        throw "maturin executable was not found after installation."
     }
 
     Write-Host "==> Testing Rust native core"
-    cargo test --manifest-path src/validkit_core/Cargo.toml
+    Invoke-Checked cargo test --manifest-path src/validkit_core/Cargo.toml
 
     Write-Host "==> Building validkit-py-core wheel"
     Invoke-Python -c "import shutil; shutil.rmtree('dist-native-local', ignore_errors=True)"
-    Invoke-Python -m maturin build --release --manifest-path src/validkit_core/Cargo.toml --out dist-native-local
+    Invoke-Checked $maturinExe build --release --manifest-path src/validkit_core/Cargo.toml --out dist-native-local
 
     if (-not $SkipInstall) {
-        $coreWheel = Get-ChildItem -Path dist-native-local -Filter "validkit_py_core-*.whl" | Sort-Object Name | Select-Object -Last 1
+        $coreWheel = Get-ChildItem -Path dist-native-local -Filter "validkit_py_core-*.whl" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
         if (-not $coreWheel) {
             throw "validkit-py-core wheel was not produced."
         }
@@ -88,8 +136,10 @@ if (-not $SkipCore) {
         Write-Host "==> Core install skipped; tests will use any already installed/importable core."
     }
 
+    Remove-StaleRootCore
+
     Write-Host "==> Native runtime check"
-    Invoke-Python -c "from validkit._native import NATIVE_RUNTIME; print('native available:', NATIVE_RUNTIME.available, 'disabled:', NATIVE_RUNTIME.disabled, 'error:', NATIVE_RUNTIME.error)"
+    Invoke-Python -c "import validkit_core; from validkit._native import NATIVE_RUNTIME; print('validkit_core:', getattr(validkit_core, '__file__', None)); print('native available:', NATIVE_RUNTIME.available, 'disabled:', NATIVE_RUNTIME.disabled, 'error:', NATIVE_RUNTIME.error)"
 }
 
 if (-not $SkipTests) {
