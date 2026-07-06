@@ -25,6 +25,8 @@ sidebar: [
     items: [
       { text: 'バリデーション', link: '/validation' },
       { text: '事前コンパイル', link: '/compile' },
+      { text: 'Native Core', link: '/core' },
+      { text: '実用パターン', link: '/patterns' },
       { text: 'エラーハンドリング', link: '/error_handling' },
       { text: 'ベストプラクティス', link: '/best_practices' }
     ]
@@ -71,6 +73,8 @@ en: {
         items: [
           { text: 'Validation', link: '/en/validation' },
           { text: 'Precompiled Validation', link: '/en/compile' },
+          { text: 'Native Core', link: '/en/core' },
+          { text: 'Practical Patterns', link: '/en/patterns' },
           { text: 'Error Handling', link: '/en/error_handling' },
           { text: 'Best Practices', link: '/en/best_practices' }
         ]

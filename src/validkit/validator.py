@@ -17,6 +17,7 @@ from collections.abc import Mapping
 import types as _types
 import math
 import dataclasses
+import weakref
 from .v import (
     Validator,
     v,
@@ -39,6 +40,7 @@ _UnionType: Optional[type] = getattr(_types, "UnionType", None)
 
 # Basic Python types supported as schema shorthand (str, int, float, bool)
 _BASIC_TYPES = (str, int, float, bool)
+_CLASS_SCHEMA_CACHE: "weakref.WeakKeyDictionary[type, Dict[str, Any]]" = weakref.WeakKeyDictionary()
 
 
 def _get_class_annotations(schema: type) -> Dict[str, Any]:
@@ -168,6 +170,8 @@ class ValidationError(Exception):
         super().__init__(f"{path}: {message}" if path else message)
 
 class ErrorDetail:
+    __slots__ = ("path", "message", "value")
+
     def __init__(self, path: str, message: str, value: Any) -> None:
         self.path = path
         self.message = message
@@ -177,9 +181,35 @@ class ErrorDetail:
         return f"{self.path}: {self.message} (value: {self.value})"
 
 class ValidationResult:
-    def __init__(self, data: Any, errors: Optional[List[ErrorDetail]] = None) -> None:
+    def __init__(self, data: Any, errors: Optional[List[Any]] = None) -> None:
         self.data = data
-        self.errors = errors or []
+        self._errors = errors or []
+        self._materialized_errors: Optional[List[ErrorDetail]] = None
+
+    @property
+    def errors(self) -> List[ErrorDetail]:
+        if self._materialized_errors is not None:
+            return self._materialized_errors
+        if not self._errors:
+            self._materialized_errors = []
+            return self._materialized_errors
+        first = self._errors[0]
+        if isinstance(first, ErrorDetail):
+            self._materialized_errors = self._errors
+            return self._materialized_errors
+        self._materialized_errors = [
+            ErrorDetail(path, message, value)
+            for path, message, value in self._errors
+        ]
+        return self._materialized_errors
+
+    @property
+    def has_errors(self) -> bool:
+        return bool(self._errors)
+
+    @property
+    def error_count(self) -> int:
+        return len(self._errors)
 
 def _type_hint_to_validator(
     hint: Any,
@@ -305,6 +335,10 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
     Returns:
         validkit のスキーマ辞書。
     """
+    cached = _CLASS_SCHEMA_CACHE.get(cls)
+    if cached is not None:
+        return cached
+
     schema: Dict[str, Any] = {}
 
     # 1. Collect fields defined as Validator class attributes (with or without annotation)
@@ -352,6 +386,7 @@ def _class_to_schema(cls: type) -> Dict[str, Any]:
 
         schema[key] = _type_hint_to_validator(type_hint, has_default=has_default, default_val=default_val)
 
+    _CLASS_SCHEMA_CACHE[cls] = schema
     return schema
 
 

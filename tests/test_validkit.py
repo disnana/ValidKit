@@ -254,4 +254,6 @@ def test_collect_errors_without_exception():
     result = validate({"a": 1}, schema, collect_errors=True)
     assert isinstance(result, ValidationResult)
     assert result.data == {"a": 1}
+    assert result.has_errors is False
+    assert result.error_count == 0
     assert result.errors == []

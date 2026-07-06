@@ -1,7 +1,10 @@
 import pytest
 import os
 import dataclasses
+import importlib
 from validkit import compile, v, ValidationError, ValidationResult
+import validkit.compiled as compiled_module
+import validkit._native as native_module
 
 def test_compile_basic():
     schema = compile({
@@ -67,6 +70,98 @@ def test_compile_list_and_dict_validators():
     with pytest.raises(ValidationError):
         schema.validate({"tags": ["a"], "scores": {"math": 95}})
 
+
+def test_compile_copies_pure_list_and_dict_validator_inputs():
+    schema = compile({
+        "tags": v.list(v.str().min(2)),
+        "scores": v.dict(str, v.int().range(0, 100)),
+    })
+
+    data = {
+        "tags": ["python", "validkit"],
+        "scores": {"math": 95, "science": 100},
+    }
+
+    result = schema.validate(data, _force_python=True)
+    assert result == data
+    assert result is not data
+    assert result["tags"] is not data["tags"]
+    assert result["scores"] is not data["scores"]
+
+    result["tags"].append("new")
+    result["scores"]["english"] = 80
+    assert data == {
+        "tags": ["python", "validkit"],
+        "scores": {"math": 95, "science": 100},
+    }
+
+
+def test_compile_copies_nested_pure_collection_inputs():
+    schema = compile({
+        "user": {
+            "id": v.int(),
+            "profile": {
+                "name": v.str().min(3),
+                "tags": v.list(v.str().min(2)),
+            },
+        },
+        "metrics": v.dict(str, v.list(v.int())),
+    })
+
+    data = {
+        "user": {"id": 1, "profile": {"name": "Alice", "tags": ["py", "vk"]}},
+        "metrics": {"daily": [1, 2, 3]},
+    }
+    result = schema.validate(data, _force_python=True)
+
+    assert result == data
+    assert result["user"] is not data["user"]
+    assert result["user"]["profile"] is not data["user"]["profile"]
+    assert result["user"]["profile"]["tags"] is not data["user"]["profile"]["tags"]
+    assert result["metrics"] is not data["metrics"]
+    assert result["metrics"]["daily"] is not data["metrics"]["daily"]
+
+
+def test_compile_does_not_preserve_transforming_list_inputs():
+    schema = compile({"items": v.list(v.int().coerce())})
+    data = {"items": ("1", "2")}
+
+    result = schema.validate(data)
+
+    assert result == {"items": [1, 2]}
+    assert result is not data
+
+
+def test_compile_pure_tuple_list_input_still_returns_list():
+    schema = compile({"items": v.list(v.int())})
+    data = {"items": (1, 2)}
+
+    result = schema.validate(data)
+
+    assert result == {"items": [1, 2]}
+    assert isinstance(result["items"], list)
+    assert result is not data
+
+
+def test_compile_nested_tuple_list_inputs_still_return_lists():
+    schema = compile({"matrix": v.list(v.list(v.int()))})
+    data = {"matrix": [(1, 2), (3,)]}
+
+    result = schema.validate(data)
+
+    assert result == {"matrix": [[1, 2], [3]]}
+    assert all(isinstance(row, list) for row in result["matrix"])
+
+
+def test_compile_dict_tuple_list_values_still_return_lists():
+    schema = compile({"metrics": v.dict(str, v.list(v.int()))})
+    data = {"metrics": {"daily": (1, 2, 3)}}
+
+    result = schema.validate(data)
+
+    assert result == {"metrics": {"daily": [1, 2, 3]}}
+    assert isinstance(result["metrics"]["daily"], list)
+
 def test_compile_collect_errors():
     schema = compile({
         "id": v.int(),
@@ -75,6 +170,8 @@ def test_compile_collect_errors():
     
     result = schema.validate({"id": "wrong", "name": "abc"}, collect_errors=True)
     assert isinstance(result, ValidationResult)
+    assert result.has_errors is True
+    assert result.error_count == 2
     assert len(result.errors) == 2
     paths = {err.path for err in result.errors}
     assert "id" in paths
@@ -213,3 +310,185 @@ def test_compile_when_condition_uses_field_base_when_skipped():
     )
 
     assert result == {"enabled": False, "token": "from-base"}
+
+
+def test_compile_works_without_native_runtime(monkeypatch):
+    class MissingRuntime:
+        available = False
+
+        def compile(self, schema):
+            return None
+
+    monkeypatch.setattr(compiled_module, "NATIVE_RUNTIME", MissingRuntime())
+
+    schema = compile({"id": v.int(), "name": v.str().min(3)})
+
+    assert schema.validate({"id": 1, "name": "Alice"}) == {"id": 1, "name": "Alice"}
+
+
+def test_native_runtime_can_be_disabled_at_startup(monkeypatch):
+    monkeypatch.setenv("VALIDKIT_DISABLE_NATIVE", "1")
+    reloaded = importlib.reload(native_module)
+
+    try:
+        assert reloaded.NATIVE_RUNTIME.available is False
+        assert reloaded.NATIVE_RUNTIME.disabled is True
+    finally:
+        monkeypatch.delenv("VALIDKIT_DISABLE_NATIVE", raising=False)
+        importlib.reload(native_module)
+
+
+def test_compile_uses_native_runtime_when_available(monkeypatch):
+    calls = {"compile": 0, "validate": 0}
+
+    class FakeNativeValidator:
+        def validate(self, data):
+            calls["validate"] += 1
+            return {"id": data["id"], "name": data["name"]}
+
+    class FakeRuntime:
+        available = True
+
+        def compile(self, schema):
+            calls["compile"] += 1
+            return FakeNativeValidator()
+
+    monkeypatch.setattr(compiled_module, "NATIVE_RUNTIME", FakeRuntime())
+
+    schema = compile({"id": v.int(), "name": v.str()})
+    result = schema.validate({"id": 1, "name": "Alice"})
+
+    assert result == {"id": 1, "name": "Alice"}
+    assert calls == {"compile": 1, "validate": 1}
+
+
+def test_compile_native_runtime_is_skipped_for_fallback_modes(monkeypatch):
+    calls = {"compile": 0, "validate": 0}
+
+    class FakeNativeValidator:
+        def validate(self, data):
+            calls["validate"] += 1
+            return data
+
+    class FakeRuntime:
+        available = True
+
+        def compile(self, schema):
+            calls["compile"] += 1
+            return FakeNativeValidator()
+
+    monkeypatch.setattr(compiled_module, "NATIVE_RUNTIME", FakeRuntime())
+
+    schema = compile({"id": v.int(), "name": v.str()})
+
+    assert schema.validate({"id": 1}, partial=True) == {"id": 1}
+    assert schema.validate({"id": 1}, base={"name": "Alice"}) == {"id": 1, "name": "Alice"}
+    assert schema.validate({"legacy_id": 1, "name": "Alice"}, migrate={"legacy_id": "id"}) == {
+        "id": 1,
+        "name": "Alice",
+    }
+    result = schema.validate({"id": "bad", "name": 1}, collect_errors=True)
+    assert isinstance(result, ValidationResult)
+
+    assert calls == {"compile": 1, "validate": 0}
+
+
+@pytest.mark.skipif(
+    not native_module.NATIVE_RUNTIME.available,
+    reason="native accelerator is not available",
+)
+def test_native_runtime_supports_exclusive_number_and_list_length_options():
+    exclusive_schema = compile({"id": v.int().min(1, exclusive=True)})
+    bounded_list_schema = compile({"tags": v.list(v.str()).min(1)})
+
+    assert exclusive_schema._native_validator is not None
+    assert bounded_list_schema._native_validator is not None
+    assert exclusive_schema.validate({"id": 2}) == {"id": 2}
+    assert bounded_list_schema.validate({"tags": ["ok"]}) == {"tags": ["ok"]}
+
+    number_result = exclusive_schema.validate({"id": 1}, collect_errors=True)
+    list_result = bounded_list_schema.validate({"tags": []}, collect_errors=True)
+
+    assert isinstance(number_result, ValidationResult)
+    assert isinstance(list_result, ValidationResult)
+    assert [(error.path, error.message, error.value) for error in number_result.errors] == [
+        ("id", "Value 1 must be greater than 1", 1)
+    ]
+    assert [(error.path, error.message, error.value) for error in list_result.errors] == [
+        ("tags", "List length 0 is shorter than minimum length 1", [])
+    ]
+
+
+@pytest.mark.skipif(
+    not native_module.NATIVE_RUNTIME.available,
+    reason="native accelerator is not available",
+)
+def test_native_runtime_returns_exact_input_for_zero_copy_success_path():
+    schema = compile({
+        "tags": v.list(v.str().min(2)),
+        "scores": v.dict(str, v.int().range(0, 100)),
+    })
+    data = {
+        "tags": ["python", "validkit"],
+        "scores": {"math": 95, "science": 100},
+    }
+
+    assert schema._native_validator is not None
+    assert schema.validate(data) is data
+
+
+@pytest.mark.skipif(
+    not native_module.NATIVE_RUNTIME.available,
+    reason="native accelerator is not available",
+)
+def test_native_runtime_accepts_defaulted_fields_when_values_are_present():
+    schema = compile({"name": v.str().default("guest"), "age": v.int().default(18)})
+    data = {"name": "Alice", "age": 30}
+
+    assert schema._native_validator is not None
+    assert schema.validate(data) is data
+    assert schema.validate({"name": "Alice"}) == {"name": "Alice", "age": 18}
+
+
+@pytest.mark.skipif(
+    not native_module.NATIVE_RUNTIME.available,
+    reason="native accelerator is not available",
+)
+def test_native_runtime_falls_back_when_output_shape_must_change():
+    schema = compile({"name": v.str()})
+    data = {"name": "Alice", "extra": "ignored"}
+
+    result = schema.validate(data)
+
+    assert result == {"name": "Alice"}
+    assert result is not data
+
+
+def test_compile_uses_native_collect_runtime_when_available(monkeypatch):
+    calls = {"compile": 0, "collect": 0}
+
+    class FakeNativeValidator:
+        def validate(self, data):
+            return data
+
+        def collect(self, data):
+            calls["collect"] += 1
+            return [("id", "Expected int", data["id"])]
+
+    class FakeRuntime:
+        available = True
+
+        def compile(self, schema):
+            calls["compile"] += 1
+            return FakeNativeValidator()
+
+    monkeypatch.setattr(compiled_module, "NATIVE_RUNTIME", FakeRuntime())
+
+    schema = compile({"id": v.int()})
+    result = schema.validate({"id": "bad"}, collect_errors=True)
+
+    assert isinstance(result, ValidationResult)
+    assert [(error.path, error.message, error.value) for error in result.errors] == [
+        ("id", "Expected int", "bad")
+    ]
+    assert calls == {"compile": 1, "collect": 1}

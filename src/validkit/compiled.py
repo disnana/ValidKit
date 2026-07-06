@@ -3,6 +3,7 @@ import os
 import builtins
 import dataclasses
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from ._native import NATIVE_RUNTIME
 from .validator import ValidationError, ErrorDetail, ValidationResult, _is_class_schema, _class_to_schema
 from .v import (
     Validator,
@@ -40,11 +41,15 @@ class CompiledSchema:
         validate_func: Any,
         validate_collect_func: Any,
         context: CompilerContext,
+        native_validator: Any = None,
     ) -> None:
         self._schema_orig = schema_orig
         self._validate_func = validate_func
         self._validate_collect_func = validate_collect_func
         self._context = context
+        self._native_validator = native_validator
+        self._native_validate = getattr(native_validator, "validate", None) if native_validator is not None else None
+        self._native_collect = getattr(native_validator, "collect", None) if native_validator is not None else None
         self._class_builder: Optional[Callable[..., Any]] = None
         if isinstance(schema_orig, type) and _is_class_schema(schema_orig):
             if dataclasses.is_dataclass(schema_orig):
@@ -59,6 +64,7 @@ class CompiledSchema:
         base: Any = None,
         migrate: Optional[Dict[str, Any]] = None,
         collect_errors: bool = False,
+        _force_python: bool = False,
     ) -> Any:
         # Apply migration if any (using same logic as in validator.py)
         if migrate and isinstance(data, dict):
@@ -76,11 +82,34 @@ class CompiledSchema:
                         else:
                             data[old_key] = result_action
 
+        if (
+            self._native_validate is not None
+            and not _force_python
+            and not collect_errors
+            and not partial
+            and base is None
+            and migrate is None
+        ):
+            native_result = self._native_validate(data)
+            if native_result is not None:
+                return self._convert_class_result(native_result, partial)
+
         if not collect_errors and not partial and base is None:
             validated_data = self._validate_func(data, data)
             return self._convert_class_result(validated_data, partial)
 
         if collect_errors:
+            if (
+                self._native_collect is not None
+                and not _force_python
+                and not partial
+                and base is None
+                and migrate is None
+            ):
+                native_errors = self._native_collect(data)
+                if native_errors is not None:
+                    return ValidationResult(data, native_errors)
+
             errors: List[ErrorDetail] = []
             try:
                 validated_data = self._validate_collect_func(
@@ -169,7 +198,8 @@ def compile(schema: Any) -> CompiledSchema:
 
     validate_func = local_vars["validate_compiled"]
     validate_collect_func = local_vars["validate_compiled_collect"]
-    return CompiledSchema(schema_orig, validate_func, validate_collect_func, ctx)
+    native_validator = NATIVE_RUNTIME.compile(preprocessed)
+    return CompiledSchema(schema_orig, validate_func, validate_collect_func, ctx, native_validator)
 
 
 def _gen_code(

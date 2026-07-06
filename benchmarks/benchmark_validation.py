@@ -16,9 +16,11 @@ from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from validkit import compile, v, validate  # noqa: E402
+from validkit._native import NATIVE_RUNTIME  # noqa: E402
 
 try:
     from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
@@ -146,8 +148,10 @@ def run_case(
     iterations: int,
     kwargs: dict[str, Any],
     pydantic_expects_error: bool,
+    native_mode: str = "auto",
 ) -> dict[str, Any]:
     compiled_schema = compile(schema)
+    force_python = native_mode == "python"
 
     def pydantic() -> None:
         for _ in range(iterations):
@@ -163,14 +167,24 @@ def run_case(
 
     def compiled() -> None:
         for _ in range(iterations):
-            compiled_schema.validate(payload, **kwargs)
+            compiled_schema.validate(payload, _force_python=force_python, **kwargs)
+
+    def compiled_python() -> None:
+        for _ in range(iterations):
+            compiled_schema.validate(payload, _force_python=True, **kwargs)
 
     pydantic_seconds = time_call(pydantic)
     regular_seconds = time_call(regular)
     compiled_seconds = time_call(compiled)
+    compiled_python_seconds = time_call(compiled_python) if native_mode == "both" else None
     compiled_vs_regular = regular_seconds / compiled_seconds if compiled_seconds else float("inf")
     regular_vs_pydantic = pydantic_seconds / regular_seconds if regular_seconds else float("inf")
     compiled_vs_pydantic = pydantic_seconds / compiled_seconds if compiled_seconds else float("inf")
+    native_vs_python = (
+        compiled_python_seconds / compiled_seconds
+        if compiled_python_seconds is not None and compiled_seconds
+        else None
+    )
 
     return {
         "case": name,
@@ -178,13 +192,40 @@ def run_case(
         "pydantic_seconds": pydantic_seconds,
         "regular_seconds": regular_seconds,
         "compiled_seconds": compiled_seconds,
+        "compiled_python_seconds": compiled_python_seconds,
         "regular_vs_pydantic": regular_vs_pydantic,
         "compiled_vs_regular": compiled_vs_regular,
         "compiled_vs_pydantic": compiled_vs_pydantic,
+        "native_vs_python": native_vs_python,
     }
 
 
-def print_table(results: list[dict[str, Any]]) -> None:
+def print_table(results: list[dict[str, Any]], native_mode: str) -> None:
+    if native_mode == "both":
+        print(
+            "| case | iterations | pydantic | validkit | compiled auto | "
+            "compiled forced python | validkit / pydantic | auto / pydantic | auto / forced python |"
+        )
+        print("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for result in results:
+            compiled_python = result["compiled_python_seconds"]
+            compiled_python_text = (
+                f"{compiled_python:.6f}s" if compiled_python is not None else "n/a"
+            )
+            native_ratio = result["native_vs_python"]
+            native_ratio_text = f"{native_ratio:.2f}x" if native_ratio is not None else "n/a"
+            print(
+                "| {case} | {iterations} | {pydantic_seconds:.6f}s | "
+                "{regular_seconds:.6f}s | {compiled_seconds:.6f}s | "
+                "{compiled_python_text} | {regular_vs_pydantic:.2f}x | "
+                "{compiled_vs_pydantic:.2f}x | {native_ratio_text} |".format(
+                    compiled_python_text=compiled_python_text,
+                    native_ratio_text=native_ratio_text,
+                    **result,
+                )
+            )
+        return
+
     print(
         "| case | iterations | pydantic | validkit | validkit compiled | "
         "validkit / pydantic | compiled / validkit | compiled / pydantic |"
@@ -203,10 +244,40 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark ValidKit validation paths.")
     parser.add_argument("--iterations", type=int, default=20_000)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--case",
+        choices=[case[0] for case in build_cases(1)],
+        help="Run only one benchmark case. Useful when investigating noisy results.",
+    )
+    parser.add_argument(
+        "--native-mode",
+        choices=("auto", "python", "native", "both"),
+        default="auto",
+        help=(
+            "Native accelerator mode: auto uses it when available, python forces the "
+            "Python compiled path, native requires it, both compares auto and forced python."
+        ),
+    )
     args = parser.parse_args()
 
+    if args.native_mode == "native" and not NATIVE_RUNTIME.available:
+        raise SystemExit("native accelerator is not available")
+
+    cases = build_cases(args.iterations)
+    if args.case:
+        cases = [case for case in cases if case[0] == args.case]
+
     results = [
-        run_case(name, pydantic_model, schema, payload, iterations, kwargs, pydantic_expects_error)
+        run_case(
+            name,
+            pydantic_model,
+            schema,
+            payload,
+            iterations,
+            kwargs,
+            pydantic_expects_error,
+            args.native_mode,
+        )
         for (
             name,
             pydantic_model,
@@ -215,13 +286,19 @@ def main() -> None:
             iterations,
             kwargs,
             pydantic_expects_error,
-        ) in build_cases(args.iterations)
+        ) in cases
     ]
 
     if args.json:
-        print(json.dumps(results, indent=2))
+        print(json.dumps({
+            "native_available": NATIVE_RUNTIME.available,
+            "native_disabled": NATIVE_RUNTIME.disabled,
+            "native_mode": args.native_mode,
+            "results": results,
+        }, indent=2))
     else:
-        print_table(results)
+        print(f"native available: {NATIVE_RUNTIME.available} (disabled: {NATIVE_RUNTIME.disabled})")
+        print_table(results, args.native_mode)
 
 
 if __name__ == "__main__":
