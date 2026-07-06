@@ -10,7 +10,7 @@ ValidKit の公開 API と主要バリデータの一覧です。
 
 ### `validate`
 
-```python
+```text
 validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
 ```
 
@@ -18,7 +18,7 @@ validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrat
 
 ### `compile`
 
-```python
+```text
 compile(schema: Any) -> validkit.compiled.CompiledSchema
 ```
 
@@ -26,7 +26,7 @@ compile(schema: Any) -> validkit.compiled.CompiledSchema
 
 ### `Schema`
 
-```python
+```text
 Schema(schema: Any) -> None
 ```
 

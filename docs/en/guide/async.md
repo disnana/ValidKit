@@ -8,9 +8,9 @@ from validkit import v, validate
 schema = {"name": v.str(), "age": v.int()}
 
 async def create_user(request):
-payload = await request.json()
-data = validate(payload, schema)
-return data
+    payload = await request.json()
+    data = validate(payload, schema)
+    return data
 ```
 
 For very large payloads or hot paths, precompile schemas with `compile()` to reduce validation latency.
