@@ -1,9 +1,8 @@
 # Performance and Benchmarks
 
-Benchmarks live in `benchmarks/benchmark_validation.py`. They also compare against Pydantic, so install the benchmark extra before running them.
+Benchmarks live in `benchmarks/benchmark_validation.py`. They compare normal and compiled validation without external dependencies.
 
 ```bash
-python -m pip install -e ".[benchmark]"
 python benchmarks/benchmark_validation.py
 python benchmarks/benchmark_validation.py --json
 ```
@@ -23,4 +22,4 @@ python benchmarks/benchmark_validation.py --json
 
 `compile(schema)` uses separate generated functions for normal validation and `collect_errors=True`. Compile a schema once and reuse it on hot paths.
 
-`collect_errors=True` returns a `ValidationResult`. Detailed `ErrorDetail` objects are created when `result.errors` is accessed, so use `result.has_errors` or `result.error_count` when callers only need a cheap error check. Prefer normal validation for high-volume valid payloads, and use `collect_errors=True` when callers need a full error list.
+`collect_errors=True` creates multiple `ErrorDetail` objects, so the speedup is usually smaller than normal validation. Prefer normal validation for high-volume valid payloads, and use `collect_errors=True` when callers need a full error list.

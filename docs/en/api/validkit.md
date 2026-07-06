@@ -1,40 +1,40 @@
 ---
-outline: [2, 3]
----
+    outline: [2, 3]
+    ---
 
-# API Reference
+    # API Reference
 
-Public ValidKit APIs and validator factories.
+    Public ValidKit APIs and validator factories.
 
-## Top-level functions
+    ## Top-level functions
 
-### `validate`
+    ### `validate`
 
-```text
-validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
-```
+    ```text
+    validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
+    ```
 
-Validates data against a schema. With `collect_errors=True`, it returns `ValidationResult` and gathers multiple errors.
+    Validates data against a schema. With `collect_errors=True`, it returns `ValidationResult` and gathers multiple errors.
 
-### `compile`
+    ### `compile`
 
-```text
-compile(schema: Any) -> validkit.compiled.CompiledSchema
-```
+    ```text
+    compile(schema: Any) -> validkit.compiled.CompiledSchema
+    ```
 
-Precompiles a schema and returns `CompiledSchema` for repeated validation. Core validators, lists, and dictionaries are optimized with generated Python code.
+    Precompiles a schema and returns `CompiledSchema` for repeated validation. Core validators, lists, and dictionaries are optimized with generated Python code.
 
-### `Schema`
+    ### `Schema`
 
-```text
-Schema(schema: Any) -> None
-```
+    ```text
+    Schema(schema: Any) -> None
+    ```
 
-A thin typing helper. Combining `Schema[T]` with `TypedDict` helps IDEs infer validated return shapes.
+    A thin typing helper. Combining `Schema[T]` with `TypedDict` helps IDEs infer validated return shapes.
 
-## Validator factories
+    ## Validator factories
 
-| Factory | Class | Validates |
+    | Factory | Class | Validates |
 |---|---|---|
 | `v.str()` | `StringValidator` | 文字列 / string |
 | `v.int()` | `NumberValidator` | 整数 / integer |
@@ -55,9 +55,9 @@ A thin typing helper. Combining `Schema[T]` with `TypedDict` helps IDEs infer va
 | `v.url()` | `URLValidator` | URL |
 | `v.enum(enum_cls)` | `EnumValidator` | Enum |
 
-## Common chain methods
+    ## Common chain methods
 
-| Method | Purpose |
+    | Method | Purpose |
 |---|---|
 | `.optional()` | Allow missing values and `None` |
 | `.default(value)` | Fill missing values |
@@ -70,12 +70,12 @@ A thin typing helper. Combining `Schema[T]` with `TypedDict` helps IDEs infer va
 | `.examples(list)` | Examples for docs and sample generation |
 | `.description(text)` | Field description metadata |
 
-## Base validator methods
+    ## Base validator methods
 
-`coerce`, `custom`, `default`, `description`, `env`, `error_msg`, `examples`, `optional`, `secret`, `validate`, `when`
+    `coerce`, `custom`, `default`, `description`, `env`, `error_msg`, `examples`, `optional`, `secret`, `validate`, `when`
 
-## Return and error types
+    ## Return and error types
 
-- `ValidationError`: Represents a single validation failure. It exposes `message`, `path`, and `value`.
-- `ValidationResult`: Returned when collecting multiple errors. It exposes `data` and `errors`.
-- `CompiledSchema`: Returned by `compile(schema)`. Use `.validate(...)` to validate data.
+    - `ValidationError`: Represents a single validation failure. It exposes `message`, `path`, and `value`.
+    - `ValidationResult`: Returned when collecting multiple errors. It exposes `data` and `errors`.
+    - `CompiledSchema`: Returned by `compile(schema)`. Use `.validate(...)` to validate data.

@@ -14,9 +14,9 @@ pip install validkit-py
 from validkit import v, validate
 
 schema = {
-"name": v.str().min(3),
-"age": v.int().range(0, 150),
-"tags": v.list(v.str()).default([]),
+    "name": v.str().min(3),
+    "age": v.int().range(0, 150),
+    "tags": v.list(v.str()).default([]),
 }
 
 user = validate({"name": "Alice", "age": 30}, schema)
@@ -29,10 +29,10 @@ print(user)
 
 ```python
 schema = {
-"account": {
-    "email": v.str().regex(r"^[^@]+@[^@]+$"),
-    "admin": bool,
-}
+    "account": {
+        "email": v.str().regex(r"^[^@]+@[^@]+$"),
+        "admin": bool,
+    }
 }
 ```
 

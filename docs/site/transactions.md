@@ -16,8 +16,8 @@ updated = validate({"volume": 80}, schema, partial=True, base=base)
 ```python
 schema = {"username": v.str()}
 data = validate(
-{"user_name": "alice"},
-schema,
-migrate={"user_name": "username"},
+    {"user_name": "alice"},
+    schema,
+    migrate={"user_name": "username"},
 )
 ```

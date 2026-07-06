@@ -6,8 +6,8 @@ ValidKit helps validate data at trust boundaries. It is not a replacement for au
 
 ```python
 schema = {
-"token": v.str().secret(),
-"password": v.str().secret(),
+    "token": v.str().secret(),
+    "password": v.str().secret(),
 }
 ```
 
@@ -15,7 +15,7 @@ schema = {
 
 ```python
 schema = {
-"api_key": v.str().env("APP_API_KEY").secret(),
+    "api_key": v.str().env("APP_API_KEY").secret(),
 }
 ```
 

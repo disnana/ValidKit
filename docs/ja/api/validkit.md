@@ -1,40 +1,40 @@
 ---
-outline: [2, 3]
----
+    outline: [2, 3]
+    ---
 
-# API リファレンス
+    # API リファレンス
 
-ValidKit の公開 API と主要バリデータの一覧です。
+    ValidKit の公開 API と主要バリデータの一覧です。
 
-## Top-level functions
+    ## Top-level functions
 
-### `validate`
+    ### `validate`
 
-```text
-validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
-```
+    ```text
+    validate(data: Any, schema: Any, partial: bool = False, base: Any = None, migrate: Optional[Dict[str, Any]] = None, collect_errors: bool = False) -> Union[Any, ForwardRef('ValidationResult')]
+    ```
 
-データとスキーマを受け取り、検証済みデータを返します。`collect_errors=True` の場合は `ValidationResult` を返し、複数のエラーをまとめて確認できます。
+    データとスキーマを受け取り、検証済みデータを返します。`collect_errors=True` の場合は `ValidationResult` を返し、複数のエラーをまとめて確認できます。
 
-### `compile`
+    ### `compile`
 
-```text
-compile(schema: Any) -> validkit.compiled.CompiledSchema
-```
+    ```text
+    compile(schema: Any) -> validkit.compiled.CompiledSchema
+    ```
 
-スキーマを事前コンパイルし、繰り返し検証向けの `CompiledSchema` を返します。基本型・リスト・辞書・一部の組み込みバリデータは生成コードで高速化されます。
+    スキーマを事前コンパイルし、繰り返し検証向けの `CompiledSchema` を返します。基本型・リスト・辞書・一部の組み込みバリデータは生成コードで高速化されます。
 
-### `Schema`
+    ### `Schema`
 
-```text
-Schema(schema: Any) -> None
-```
+    ```text
+    Schema(schema: Any) -> None
+    ```
 
-型補完を助ける薄いラッパーです。`Schema[T]` と `TypedDict` を組み合わせると IDE が戻り値の形を推論しやすくなります。
+    型補完を助ける薄いラッパーです。`Schema[T]` と `TypedDict` を組み合わせると IDE が戻り値の形を推論しやすくなります。
 
-## Validator factories
+    ## Validator factories
 
-| ファクトリ | クラス | 検証対象 |
+    | ファクトリ | クラス | 検証対象 |
 |---|---|---|
 | `v.str()` | `StringValidator` | 文字列 / string |
 | `v.int()` | `NumberValidator` | 整数 / integer |
@@ -55,9 +55,9 @@ Schema(schema: Any) -> None
 | `v.url()` | `URLValidator` | URL |
 | `v.enum(enum_cls)` | `EnumValidator` | Enum |
 
-## Common chain methods
+    ## Common chain methods
 
-| メソッド | 用途 |
+    | メソッド | 用途 |
 |---|---|
 | `.optional()` | 欠損値と `None` を許容 |
 | `.default(value)` | 欠損時の値を補完 |
@@ -70,12 +70,12 @@ Schema(schema: Any) -> None
 | `.examples(list)` | サンプル生成・ドキュメント用の例 |
 | `.description(text)` | フィールド説明 |
 
-## Base validator methods
+    ## Base validator methods
 
-`coerce`, `custom`, `default`, `description`, `env`, `error_msg`, `examples`, `optional`, `secret`, `validate`, `when`
+    `coerce`, `custom`, `default`, `description`, `env`, `error_msg`, `examples`, `optional`, `secret`, `validate`, `when`
 
-## Return and error types
+    ## Return and error types
 
-- `ValidationError`: 単一エラーを表します。`message`, `path`, `value` を持ちます。
-- `ValidationResult`: 複数エラー収集時の戻り値です。`data` と `errors` を持ちます。
-- `CompiledSchema`: `compile(schema)` の戻り値です。`.validate(...)` で検証します。
+    - `ValidationError`: 単一エラーを表します。`message`, `path`, `value` を持ちます。
+    - `ValidationResult`: 複数エラー収集時の戻り値です。`data` と `errors` を持ちます。
+    - `CompiledSchema`: `compile(schema)` の戻り値です。`.validate(...)` で検証します。

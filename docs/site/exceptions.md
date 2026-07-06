@@ -19,9 +19,5 @@
 ```python
 result = validate(data, schema, collect_errors=True)
 print(result.data)
-print(result.has_errors)
-print(result.error_count)
-
-for error in result.errors:
-    print(error.path, error.message)
+print(result.errors)
 ```
