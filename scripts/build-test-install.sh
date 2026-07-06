@@ -82,8 +82,13 @@ echo "==> Python"
 "$PYTHON" --version
 
 if [ "$SKIP_INSTALL" -eq 0 ]; then
-  echo "==> Installing validkit-py in editable mode"
-  "$PYTHON" -m pip install -e .
+  if [ "$RUN_BENCH" -eq 1 ]; then
+    echo "==> Installing validkit-py in editable mode with benchmark extras"
+    "$PYTHON" -m pip install -e ".[benchmark]"
+  else
+    echo "==> Installing validkit-py in editable mode"
+    "$PYTHON" -m pip install -e .
+  fi
 else
   prepend_pythonpath "$ROOT_DIR/src"
 fi
@@ -116,20 +121,14 @@ if [ "$SKIP_CORE" -eq 0 ]; then
     --out dist-native-local
 
   if [ "$SKIP_INSTALL" -eq 0 ]; then
-    CORE_WHEEL=
-    for wheel in dist-native-local/validkit_py_core-*.whl; do
-      if [ -f "$wheel" ]; then
-        CORE_WHEEL=$wheel
-        break
-      fi
-    done
+    CORE_WHEEL=$("$PYTHON" -c "from pathlib import Path; wheels=sorted(Path('dist-native-local').glob('validkit_py_core-*.whl')); print(wheels[-1] if wheels else '')")
     if [ -z "$CORE_WHEEL" ]; then
       echo "validkit-py-core wheel was not produced." >&2
       exit 1
     fi
 
     echo "==> Installing validkit-py-core"
-    "$PYTHON" -m pip install --force-reinstall "$CORE_WHEEL"
+    "$PYTHON" -m pip install --force-reinstall --no-deps "$CORE_WHEEL"
   else
     echo "==> Core install skipped; tests will use any already installed/importable core."
   fi
