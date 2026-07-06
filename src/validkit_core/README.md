@@ -1,24 +1,51 @@
 # validkit-py-core
 
-Experimental Rust validation core for ValidKit.
+Optional Rust/PyO3 native validation core for
+[ValidKit](https://github.com/disnana/ValidKit).
 
-The Python distribution is published as `validkit-py-core` and exposes the
-native module as `validkit_core`.
+`validkit-py-core` publishes the native Python module `validkit_core`. It is
+used automatically by `validkit-py` when installed and when a compiled schema is
+supported by the native fast path.
 
-This crate is intentionally isolated from the Python package for now. The first
-goal is to prove and test the Rust validation engine without changing the public
-Python API or the current pure-Python build.
+## Install
 
-Current scope:
+```bash
+pip install validkit-py validkit-py-core
+```
 
-- Validate a borrowed value tree against a compact schema tree.
-- Preserve ValidKit-compatible path strings such as `user.tags[1]`.
-- Ignore unknown object keys, matching the current non-strict ValidKit behavior.
-- Avoid Python packaging changes until the core behavior is stable.
+The main `validkit-py` package does not require this package. If
+`validkit-py-core` is missing or disabled, ValidKit falls back to the pure Python
+compiled validator.
 
-Next step:
+## What It Accelerates
 
-- Add a PyO3 bridge that converts a compiled ValidKit schema into a Rust schema
-  once, then sends each payload through the Rust validator in one call.
-- Keep the bridge optional. If the native module is unavailable, ValidKit should
-  continue using the existing Python compiled validator.
+The native core is focused on hot compiled validation paths:
+
+- `compile(...).validate(...)` for supported dict/list/str/int/float/bool
+  schemas
+- nested object and list traversal
+- numeric range checks, including exclusive bounds
+- string and list length checks
+- some `collect_errors=True` paths, with lazy `ErrorDetail` materialization in
+  `validkit-py`
+
+The fast path validates borrowed Python objects directly and returns the input
+object unchanged when the output shape does not need to change.
+
+## Fallback Behavior
+
+ValidKit automatically uses the Python path for unsupported features, including
+custom Python callbacks, coercion, environment lookups, regex validators,
+`partial`, `base`, and migrations. This keeps the public API compatible while
+allowing the native core to prioritize performance.
+
+You can force-disable the native core:
+
+```bash
+VALIDKIT_DISABLE_NATIVE=1 python app.py
+```
+
+## Import Name
+
+The distribution name is `validkit-py-core`; the importable module is
+`validkit_core`.

@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "validkit-py-core"
 dynamic = ["version"]
 description = "Optional native validation core for ValidKit."
+readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
@@ -17,6 +18,11 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/disnana/ValidKit"
+Documentation = "https://validkit.disnana.com/core"
+Source = "https://github.com/disnana/ValidKit"
 
 [tool.maturin]
 module-name = "validkit_core"
