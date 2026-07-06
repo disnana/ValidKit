@@ -782,11 +782,15 @@ fn validate_python_object(fields: &[Field], value: &Bound<'_, PyAny>) -> PyResul
         return Ok(false);
     }
 
-    for field in fields {
-        let Some(item) = dict.get_item(field.name.as_str())? else {
+    for (key, item) in dict.iter() {
+        let Ok(key) = key.downcast::<PyString>() else {
             return Ok(false);
         };
-        if !validate_python_value(&field.schema, &item)? {
+        let name = key.to_str()?;
+        let Some(index) = fields.iter().position(|field| field.name == name) else {
+            return Ok(false);
+        };
+        if !validate_python_value(&fields[index].schema, &item)? {
             return Ok(false);
         };
     }
@@ -1260,12 +1264,16 @@ fn collect_python_object(
 
     let mut valid = true;
     if dict.len() == fields.len() {
-        for field in fields {
-            let Some(item) = dict.get_item(field.name.as_str())? else {
+        for (key, item) in dict.iter() {
+            let Ok(key) = key.downcast::<PyString>() else {
                 return Ok(None);
             };
-            let field_path = join_path(path, &field.name);
-            match collect_python_value(py, &field.schema, &item, &field_path, errors)? {
+            let name = key.to_str()?;
+            let Some(index) = fields.iter().position(|field| field.name == name) else {
+                return Ok(None);
+            };
+            let field_path = join_path(path, name);
+            match collect_python_value(py, &fields[index].schema, &item, &field_path, errors)? {
                 Some(field_valid) => valid &= field_valid,
                 None => return Ok(None),
             }
