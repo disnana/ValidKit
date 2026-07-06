@@ -13,8 +13,10 @@
 - Added compatibility tests that keep the Python compiled path from aliasing mutable input data.
 - Added an experimental Rust/PyO3 native validation core, published as `validkit-py-core`. Supported pure dict/list/str/int/float/bool schemas can now use the startup-selected native path from `compile(...).validate(...)`.
 - Prioritized native-path performance: successful validations that do not need output-shape changes now return the validated input object directly to avoid unnecessary copies.
-- Added automatic fallback to the existing Python path when the native extension is unavailable, `VALIDKIT_DISABLE_NATIVE=1` is set, a schema uses unsupported features, or validation uses `collect_errors`, `partial`, `base`, or `migrate`.
+- Added automatic fallback to the existing Python path when the native extension is unavailable, `VALIDKIT_DISABLE_NATIVE=1` is set, a schema uses unsupported features, or validation uses `partial`, `base`, or `migrate`.
+- Added native-core validation for exclusive numeric bounds and list length constraints.
 - Added `--native-mode auto|python|native|both` to the benchmark so Python and native compiled paths can be compared even when the native extension is absent.
+- Added `ValidationResult.has_errors` and `ValidationResult.error_count`; detailed `ErrorDetail` objects for `collect_errors=True` are now materialized lazily when `errors` is accessed.
 
 ### Fixed
 - Kept unsupported exclusive numeric bounds and list length constraints on the Python-compatible path instead of incorrectly accepting them in the Rust bridge.
@@ -22,15 +24,15 @@
 ## [1.3.2] - 2026-07-04
 
 ### Changed
-- コンパイル済みスキーマの通常検証パスを高速化し、不要なエラーリスト生成とキーワード引数呼び出しを避けるようにしました。
-- コンパイル時にクラススキーマの復元方法を判定し、dataclass / `NamedTuple` 変換時の実行時判定を削減しました。
-- dict スキーマの生成コードを最適化し、成功パスでの余分なフラグ分岐、辞書参照、トップレベル path 計算を減らしました。
-- `base` が無い通常ケースで、欠損補完用の空 dict 生成を避けるようにしました。
-- コンパイル済みスキーマで通常検証用と `collect_errors=True` 用の生成関数を分け、実行モードごとの分岐を減らしました。
-- コンパイル済みスキーマの非収集パスで、内部呼び出しを位置引数ベースにして呼び出しオーバーヘッドを削減しました。
+- Optimized the normal compiled validation path by avoiding unnecessary error-list allocation and keyword-argument calls.
+- Determined class-schema reconstruction at compile time to reduce runtime checks for dataclass / `NamedTuple` conversion.
+- Optimized generated dict-schema code by reducing success-path flag branches, dictionary lookups, and top-level path computation.
+- Avoided allocating an empty dict for missing-value fallback when `base` is not used.
+- Split generated functions for normal compiled validation and `collect_errors=True` validation to reduce mode checks.
+- Switched internal calls on the non-collecting compiled path to positional arguments to reduce call overhead.
 
 ### Fixed
-- コンパイル済みの入れ子 dict スキーマで `base` の子要素が再帰先に渡らず、`partial=True` や `.when(...)` のスキップ時に既存値を補完できない問題を修正しました。
+- Fixed nested compiled dict schemas not passing child `base` values into recursive validation, which prevented `partial=True` and skipped `.when(...)` fields from reusing existing values.
 
 ## [1.3.1] - 2026-07-03
 

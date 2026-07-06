@@ -5,19 +5,17 @@
 Schemas can be written as classes. Type annotations become basic validators, and validator attributes add explicit constraints.
 
 ```python
-from dataclasses import dataclass
 from validkit import compile, v
 
-@dataclass
 class User:
     name: str
-    age: int = v.int().range(0, 150)
+    age = v.int().range(0, 150)
     active: bool = True
 
 schema = compile(User)
 user = schema.validate({"name": "Alice", "age": 30})
 
-assert isinstance(user, User)
+assert user == {"name": "Alice", "age": 30}
 ```
 
 With `partial=True`, ValidKit returns a dict because the constructor may not have enough required values.
@@ -40,7 +38,7 @@ incoming = compile({
 })
 
 data = incoming.validate(payload)
-user = UserModel(**data)
+user = UserModel.model_validate(data)
 ```
 
 You can also validate Pydantic output before sending it to an external API.

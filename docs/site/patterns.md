@@ -5,19 +5,17 @@
 辞書ではなくクラスでスキーマを表現できます。型注釈から基本バリデータが作られ、クラス属性に明示的なバリデータを書くと制約を足せます。
 
 ```python
-from dataclasses import dataclass
 from validkit import compile, v
 
-@dataclass
 class User:
     name: str
-    age: int = v.int().range(0, 150)
+    age = v.int().range(0, 150)
     active: bool = True
 
 schema = compile(User)
 user = schema.validate({"name": "Alice", "age": 30})
 
-assert isinstance(user, User)
+assert user == {"name": "Alice", "age": 30}
 ```
 
 `partial=True` の場合は、コンストラクタに必要な値が揃わない可能性があるため辞書を返します。
@@ -40,7 +38,7 @@ incoming = compile({
 })
 
 data = incoming.validate(payload)
-user = UserModel(**data)
+user = UserModel.model_validate(data)
 ```
 
 逆に、Pydanticモデルの出力を外部API向けに軽く再検証する使い方もできます。

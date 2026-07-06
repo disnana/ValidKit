@@ -170,6 +170,8 @@ class ValidationError(Exception):
         super().__init__(f"{path}: {message}" if path else message)
 
 class ErrorDetail:
+    __slots__ = ("path", "message", "value")
+
     def __init__(self, path: str, message: str, value: Any) -> None:
         self.path = path
         self.message = message
@@ -179,9 +181,35 @@ class ErrorDetail:
         return f"{self.path}: {self.message} (value: {self.value})"
 
 class ValidationResult:
-    def __init__(self, data: Any, errors: Optional[List[ErrorDetail]] = None) -> None:
+    def __init__(self, data: Any, errors: Optional[List[Any]] = None) -> None:
         self.data = data
-        self.errors = errors or []
+        self._errors = errors or []
+        self._materialized_errors: Optional[List[ErrorDetail]] = None
+
+    @property
+    def errors(self) -> List[ErrorDetail]:
+        if self._materialized_errors is not None:
+            return self._materialized_errors
+        if not self._errors:
+            self._materialized_errors = []
+            return self._materialized_errors
+        first = self._errors[0]
+        if isinstance(first, ErrorDetail):
+            self._materialized_errors = self._errors
+            return self._materialized_errors
+        self._materialized_errors = [
+            ErrorDetail(path, message, value)
+            for path, message, value in self._errors
+        ]
+        return self._materialized_errors
+
+    @property
+    def has_errors(self) -> bool:
+        return bool(self._errors)
+
+    @property
+    def error_count(self) -> int:
+        return len(self._errors)
 
 def _type_hint_to_validator(
     hint: Any,

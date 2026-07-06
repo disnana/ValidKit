@@ -13,8 +13,10 @@
 - コンパイル済みスキーマのPython経路では、戻り値と入力値の aliasing を避ける互換性テストを追加しました。
 - 実験的な Rust/PyO3 ネイティブ検証コア `validkit-py-core` を追加し、対応可能な pure dict/list/str/int/float/bool スキーマでは `compile(...).validate(...)` が起動時判定済みのネイティブ経路を使えるようにしました。
 - ネイティブ経路は性能を優先し、出力形状の変換が不要な成功ケースでは検証済みの入力オブジェクトをそのまま返すゼロコピー寄りの動作にしました。
-- ネイティブ拡張が無い環境、`VALIDKIT_DISABLE_NATIVE=1`、未対応機能、`collect_errors` / `partial` / `base` / `migrate` では従来のPython経路へ自動フォールバックするようにしました。
+- ネイティブ拡張が無い環境、`VALIDKIT_DISABLE_NATIVE=1`、未対応機能、`partial` / `base` / `migrate` では従来のPython経路へ自動フォールバックするようにしました。
+- ネイティブコアで排他的な数値境界とリスト長制約を検証できるようにしました。
 - ベンチマークに `--native-mode auto|python|native|both` を追加し、ネイティブ有無にかかわらずPython経路とネイティブ経路を比較できるようにしました。
+- `ValidationResult` に `has_errors` と `error_count` を追加し、`collect_errors=True` の詳細な `ErrorDetail` は `errors` アクセス時に遅延生成するようにしました。
 
 ### Fixed
 - Rustブリッジで未対応の排他的数値境界とリスト長制約を誤ってネイティブ処理せず、Python互換の検証へ戻すようにしました。

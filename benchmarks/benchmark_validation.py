@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from validkit import compile, v, validate  # noqa: E402
@@ -244,6 +245,11 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=20_000)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument(
+        "--case",
+        choices=[case[0] for case in build_cases(1)],
+        help="Run only one benchmark case. Useful when investigating noisy results.",
+    )
+    parser.add_argument(
         "--native-mode",
         choices=("auto", "python", "native", "both"),
         default="auto",
@@ -256,6 +262,10 @@ def main() -> None:
 
     if args.native_mode == "native" and not NATIVE_RUNTIME.available:
         raise SystemExit("native accelerator is not available")
+
+    cases = build_cases(args.iterations)
+    if args.case:
+        cases = [case for case in cases if case[0] == args.case]
 
     results = [
         run_case(
@@ -276,7 +286,7 @@ def main() -> None:
             iterations,
             kwargs,
             pydantic_expects_error,
-        ) in build_cases(args.iterations)
+        ) in cases
     ]
 
     if args.json:

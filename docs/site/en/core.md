@@ -33,15 +33,14 @@ Supported shapes:
 - `v.str()`, `v.int()`, `v.float()`, `v.bool()`
 - `v.list(...)`
 - `v.dict(str, ...)`
-- non-exclusive numeric `min` / `max` / `range`
+- numeric `min` / `max` / `range`, including exclusive bounds
 - string length `min` / `max`
+- list length `min` / `max` / `length`
 
 Fallback cases:
 
 - `partial`, `base`, `migrate`
 - `.optional()`, `.default()`, `.coerce()`, `.custom()`, `.when()`, `.env()`, `.regex()`
-- exclusive numeric bounds
-- list length constraints
 - tuple inputs that must be converted to lists
 - unknown keys that must be removed from the output
 
@@ -54,6 +53,16 @@ schema = compile({"tags": v.list(v.str())})
 data = {"tags": ["fast", "path"]}
 
 assert schema.validate(data) is data  # when the native core is active
+```
+
+With `collect_errors=True`, ValidKit returns a `ValidationResult`, but `ErrorDetail` objects are created only when `result.errors` is accessed. Call paths that only need to carry the result forward avoid paying for detailed Python error objects.
+
+```python
+result = schema.validate(data, collect_errors=True)
+
+if result.has_errors:
+    for error in result.errors:
+        print(error.path, error.message)
 ```
 
 Use the Python path explicitly when copy-compatible behavior is required.

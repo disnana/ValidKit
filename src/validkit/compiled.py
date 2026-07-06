@@ -48,6 +48,8 @@ class CompiledSchema:
         self._validate_collect_func = validate_collect_func
         self._context = context
         self._native_validator = native_validator
+        self._native_validate = getattr(native_validator, "validate", None) if native_validator is not None else None
+        self._native_collect = getattr(native_validator, "collect", None) if native_validator is not None else None
         self._class_builder: Optional[Callable[..., Any]] = None
         if isinstance(schema_orig, type) and _is_class_schema(schema_orig):
             if dataclasses.is_dataclass(schema_orig):
@@ -81,14 +83,14 @@ class CompiledSchema:
                             data[old_key] = result_action
 
         if (
-            self._native_validator is not None
+            self._native_validate is not None
             and not _force_python
             and not collect_errors
             and not partial
             and base is None
             and migrate is None
         ):
-            native_result = self._native_validator.validate(data)
+            native_result = self._native_validate(data)
             if native_result is not None:
                 return self._convert_class_result(native_result, partial)
 
@@ -98,21 +100,15 @@ class CompiledSchema:
 
         if collect_errors:
             if (
-                self._native_validator is not None
+                self._native_collect is not None
                 and not _force_python
                 and not partial
                 and base is None
                 and migrate is None
             ):
-                native_collect = getattr(self._native_validator, "collect", None)
-                if native_collect is not None:
-                    native_errors = native_collect(data)
-                    if native_errors is not None:
-                        errors = [
-                            ErrorDetail(path, message, value)
-                            for path, message, value in native_errors
-                        ]
-                        return ValidationResult(data, errors)
+                native_errors = self._native_collect(data)
+                if native_errors is not None:
+                    return ValidationResult(data, native_errors)
 
             errors: List[ErrorDetail] = []
             try:

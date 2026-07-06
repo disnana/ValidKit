@@ -4,24 +4,25 @@
 from validkit import ValidationError, v, validate
 
 try:
-validate({"age": "old"}, {"age": v.int()})
+    validate({"age": "old"}, {"age": v.int()})
 except ValidationError as exc:
-print(exc.path)     # age
-print(exc.message)  # Expected int, got str
-print(exc.value)    # old
+    print(exc.path)     # age
+    print(exc.message)  # Expected int, got str
+    print(exc.value)    # old
 ```
 
 ## `collect_errors=True`
 
 ```python
 result = validate(
-{"id": "x", "name": "Al"},
-{"id": v.int(), "name": v.str().min(3)},
-collect_errors=True,
+    {"id": "x", "name": "Al"},
+    {"id": v.int(), "name": v.str().min(3)},
+    collect_errors=True,
 )
 
-for error in result.errors:
-print(error.path, error.message)
+if result.has_errors:
+    for error in result.errors:
+        print(error.path, error.message)
 ```
 
 ## Secret masking

@@ -38,15 +38,14 @@ validated = schema.validate(data)
 - `v.str()`, `v.int()`, `v.float()`, `v.bool()`
 - `v.list(...)`
 - `v.dict(str, ...)`
-- `min` / `max` / `range` の非排他的な数値境界
+- `min` / `max` / `range` の数値境界。排他的境界も対応
 - 文字列長の `min` / `max`
+- リスト長の `min` / `max` / `length`
 
 Pythonへ戻る主な形:
 
 - `partial`, `base`, `migrate`
 - `.optional()`, `.default()`, `.coerce()`, `.custom()`, `.when()`, `.env()`, `.regex()`
-- 排他的な数値境界
-- リスト長制約
 - tuple入力をlistへ変換する必要がある場合
 - unknown keyを落として出力形状を変える必要がある場合
 
@@ -59,6 +58,16 @@ schema = compile({"tags": v.list(v.str())})
 data = {"tags": ["fast", "path"]}
 
 assert schema.validate(data) is data  # native core 使用時
+```
+
+`collect_errors=True` では `ValidationResult` を返しますが、`ErrorDetail` オブジェクトは `result.errors` にアクセスした時点で作られます。エラーの有無だけを通過させる経路では、詳細オブジェクトの生成コストを払わずに済みます。
+
+```python
+result = schema.validate(data, collect_errors=True)
+
+if result.has_errors:
+    for error in result.errors:
+        print(error.path, error.message)
 ```
 
 Python経路のコピー互換が必要な検証では、強制的にPython経路を使えます。

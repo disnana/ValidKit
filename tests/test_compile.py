@@ -170,6 +170,8 @@ def test_compile_collect_errors():
     
     result = schema.validate({"id": "wrong", "name": "abc"}, collect_errors=True)
     assert isinstance(result, ValidationResult)
+    assert result.has_errors is True
+    assert result.error_count == 2
     assert len(result.errors) == 2
     paths = {err.path for err in result.errors}
     assert "id" in paths
@@ -395,12 +397,26 @@ def test_compile_native_runtime_is_skipped_for_fallback_modes(monkeypatch):
     not native_module.NATIVE_RUNTIME.available,
     reason="native accelerator is not available",
 )
-def test_native_runtime_rejects_unsupported_number_and_list_options():
+def test_native_runtime_supports_exclusive_number_and_list_length_options():
     exclusive_schema = compile({"id": v.int().min(1, exclusive=True)})
     bounded_list_schema = compile({"tags": v.list(v.str()).min(1)})
 
-    assert exclusive_schema._native_validator is None
-    assert bounded_list_schema._native_validator is None
+    assert exclusive_schema._native_validator is not None
+    assert bounded_list_schema._native_validator is not None
+    assert exclusive_schema.validate({"id": 2}) == {"id": 2}
+    assert bounded_list_schema.validate({"tags": ["ok"]}) == {"tags": ["ok"]}
+
+    number_result = exclusive_schema.validate({"id": 1}, collect_errors=True)
+    list_result = bounded_list_schema.validate({"tags": []}, collect_errors=True)
+
+    assert isinstance(number_result, ValidationResult)
+    assert isinstance(list_result, ValidationResult)
+    assert [(error.path, error.message, error.value) for error in number_result.errors] == [
+        ("id", "Value 1 must be greater than 1", 1)
+    ]
+    assert [(error.path, error.message, error.value) for error in list_result.errors] == [
+        ("tags", "List length 0 is shorter than minimum length 1", [])
+    ]
 
 
 @pytest.mark.skipif(
@@ -419,6 +435,19 @@ def test_native_runtime_returns_exact_input_for_zero_copy_success_path():
 
     assert schema._native_validator is not None
     assert schema.validate(data) is data
+
+
+@pytest.mark.skipif(
+    not native_module.NATIVE_RUNTIME.available,
+    reason="native accelerator is not available",
+)
+def test_native_runtime_accepts_defaulted_fields_when_values_are_present():
+    schema = compile({"name": v.str().default("guest"), "age": v.int().default(18)})
+    data = {"name": "Alice", "age": 30}
+
+    assert schema._native_validator is not None
+    assert schema.validate(data) is data
+    assert schema.validate({"name": "Alice"}) == {"name": "Alice", "age": 18}
 
 
 @pytest.mark.skipif(
