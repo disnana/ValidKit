@@ -19,6 +19,9 @@ class NativeRuntime:
             self.error = exc
             return
 
+        if getattr(module, "compile_schema", None) is None:
+            return
+
         self.module = module
         self.available = True
 
