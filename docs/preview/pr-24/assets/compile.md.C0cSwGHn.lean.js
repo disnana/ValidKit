@@ -1,0 +1,1 @@
+import{_ as i,o as a,c as t,a0 as n}from"./chunks/framework.iZd8fipT.js";const d=JSON.parse('{"title":"事前コンパイル","description":"","frontmatter":{},"headers":[],"relativePath":"compile.md","filePath":"compile.md"}'),l={name:"compile.md"};function e(h,s,p,k,r,E){return a(),t("div",null,[...s[0]||(s[0]=[n("",7)])])}const c=i(l,[["render",e]]);export{d as __pageData,c as default};

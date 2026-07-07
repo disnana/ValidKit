@@ -1,0 +1,1 @@
+import{_ as i,o as a,c as t,a0 as n}from"./chunks/framework.iZd8fipT.js";const E=JSON.parse('{"title":"Native Core","description":"","frontmatter":{},"headers":[],"relativePath":"core.md","filePath":"core.md"}'),h={name:"core.md"};function l(e,s,p,k,d,o){return a(),t("div",null,[...s[0]||(s[0]=[n("",23)])])}const c=i(h,[["render",l]]);export{E as __pageData,c as default};

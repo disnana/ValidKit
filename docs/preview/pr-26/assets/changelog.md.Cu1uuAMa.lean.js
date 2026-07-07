@@ -1,0 +1,1 @@
+import{_ as d,o as a,c as o,a0 as l}from"./chunks/framework.C9qqnGT6.js";const m=JSON.parse('{"title":"変更履歴","description":"","frontmatter":{},"headers":[],"relativePath":"changelog.md","filePath":"changelog.md"}'),i={name:"changelog.md"};function c(r,e,t,h,n,u){return a(),o("div",null,[...e[0]||(e[0]=[l("",79)])])}const b=d(i,[["render",c]]);export{m as __pageData,b as default};

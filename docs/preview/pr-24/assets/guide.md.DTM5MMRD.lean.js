@@ -1,0 +1,1 @@
+import{_ as i,o as a,c as t,a0 as n}from"./chunks/framework.iZd8fipT.js";const o=JSON.parse('{"title":"ValidKit ガイド","description":"","frontmatter":{},"headers":[],"relativePath":"guide.md","filePath":"guide.md"}'),h={name:"guide.md"};function l(e,s,p,k,d,r){return a(),t("div",null,[...s[0]||(s[0]=[n("",11)])])}const g=i(h,[["render",l]]);export{o as __pageData,g as default};

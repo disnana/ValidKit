@@ -1,0 +1,1 @@
+import{_ as i,o as a,c as n,a0 as h}from"./chunks/framework.C9qqnGT6.js";const g=JSON.parse('{"title":"実用パターン","description":"","frontmatter":{},"headers":[],"relativePath":"patterns.md","filePath":"patterns.md"}'),t={name:"patterns.md"};function p(l,s,k,e,E,d){return a(),n("div",null,[...s[0]||(s[0]=[h("",15)])])}const y=i(t,[["render",p]]);export{g as __pageData,y as default};
