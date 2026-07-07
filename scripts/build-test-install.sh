@@ -78,21 +78,39 @@ prepend_pythonpath() {
   export PYTHONPATH
 }
 
+remove_stale_root_core() {
+  for file in "$ROOT_DIR"/validkit_core*.pyd "$ROOT_DIR"/validkit_core*.so; do
+    if [ -f "$file" ]; then
+      echo "==> Removing stale root native core ${file##*/}"
+      rm -f "$file"
+    fi
+  done
+}
+
 echo "==> Python"
 "$PYTHON" --version
 
 if [ "$SKIP_INSTALL" -eq 0 ]; then
-  echo "==> Installing validkit-py in editable mode"
-  "$PYTHON" -m pip install -e .
-else
-  prepend_pythonpath "$ROOT_DIR/src"
+  if [ "$RUN_BENCH" -eq 1 ]; then
+    echo "==> Installing validkit-py in editable mode with benchmark extras"
+    "$PYTHON" -m pip install -e ".[benchmark]"
+  else
+    echo "==> Installing validkit-py in editable mode"
+    "$PYTHON" -m pip install -e .
+  fi
 fi
+prepend_pythonpath "$ROOT_DIR/src"
+
+echo "==> ValidKit import check"
+"$PYTHON" -c "import validkit; print('validkit:', validkit.__version__)"
 
 if [ -d "$ROOT_DIR/.pytest_deps" ]; then
   prepend_pythonpath "$ROOT_DIR/.pytest_deps"
 fi
 
 if [ "$SKIP_CORE" -eq 0 ]; then
+  remove_stale_root_core
+
   if ! command -v cargo >/dev/null 2>&1; then
     echo "cargo was not found. Install Rust or rerun with --skip-core." >&2
     exit 1
@@ -102,8 +120,22 @@ if [ "$SKIP_CORE" -eq 0 ]; then
   cargo --version
 
   if ! "$PYTHON" -c "import maturin" >/dev/null 2>&1; then
-    echo "==> Installing maturin"
-    "$PYTHON" -m pip install "maturin>=1.7,<2"
+    echo "==> Installing maturin into .build-tools"
+    "$PYTHON" -m pip install --upgrade --target "$ROOT_DIR/.build-tools" "maturin>=1.7,<2"
+    prepend_pythonpath "$ROOT_DIR/.build-tools"
+  fi
+
+  MATURIN_CMD=
+  if command -v maturin >/dev/null 2>&1; then
+    MATURIN_CMD=$(command -v maturin)
+  elif [ -x "$ROOT_DIR/.build-tools/bin/maturin" ]; then
+    MATURIN_CMD="$ROOT_DIR/.build-tools/bin/maturin"
+  elif [ -x "$ROOT_DIR/.build-tools/bin/maturin.exe" ]; then
+    MATURIN_CMD="$ROOT_DIR/.build-tools/bin/maturin.exe"
+  fi
+  if [ -z "$MATURIN_CMD" ]; then
+    echo "maturin executable was not found after installation." >&2
+    exit 1
   fi
 
   echo "==> Testing Rust native core"
@@ -111,31 +143,27 @@ if [ "$SKIP_CORE" -eq 0 ]; then
 
   echo "==> Building validkit-py-core wheel"
   "$PYTHON" -c "import shutil; shutil.rmtree('dist-native-local', ignore_errors=True)"
-  "$PYTHON" -m maturin build --release \
+  "$MATURIN_CMD" build --release \
     --manifest-path src/validkit_core/Cargo.toml \
     --out dist-native-local
 
   if [ "$SKIP_INSTALL" -eq 0 ]; then
-    CORE_WHEEL=
-    for wheel in dist-native-local/validkit_py_core-*.whl; do
-      if [ -f "$wheel" ]; then
-        CORE_WHEEL=$wheel
-        break
-      fi
-    done
+    CORE_WHEEL=$("$PYTHON" -c "from pathlib import Path; wheels=sorted(Path('dist-native-local').glob('validkit_py_core-*.whl')); print(wheels[-1] if wheels else '')")
     if [ -z "$CORE_WHEEL" ]; then
       echo "validkit-py-core wheel was not produced." >&2
       exit 1
     fi
 
     echo "==> Installing validkit-py-core"
-    "$PYTHON" -m pip install --force-reinstall "$CORE_WHEEL"
+    "$PYTHON" -m pip install --force-reinstall --no-deps "$CORE_WHEEL"
   else
     echo "==> Core install skipped; tests will use any already installed/importable core."
   fi
 
+  remove_stale_root_core
+
   echo "==> Native runtime check"
-  "$PYTHON" -c "from validkit._native import NATIVE_RUNTIME; print('native available:', NATIVE_RUNTIME.available, 'disabled:', NATIVE_RUNTIME.disabled, 'error:', NATIVE_RUNTIME.error)"
+  "$PYTHON" -c "import validkit_core; from validkit._native import NATIVE_RUNTIME; print('validkit_core:', getattr(validkit_core, '__file__', None)); print('native available:', NATIVE_RUNTIME.available, 'disabled:', NATIVE_RUNTIME.disabled, 'error:', NATIVE_RUNTIME.error)"
 fi
 
 if [ "$SKIP_TESTS" -eq 0 ]; then

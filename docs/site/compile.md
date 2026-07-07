@@ -6,9 +6,9 @@
 from validkit import compile, v
 
 user_schema = compile({
-"id": v.int(),
-"name": v.str().min(3),
-"roles": v.list(v.str()),
+    "id": v.int(),
+    "name": v.str().min(3),
+    "roles": v.list(v.str()),
 })
 
 user_schema.validate({"id": 1, "name": "Alice", "roles": ["admin"]})

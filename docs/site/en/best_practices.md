@@ -12,8 +12,8 @@ Validate data as soon as it crosses a trust boundary: APIs, CLIs, config files, 
 
 ```python
 schema = {
-"api_key": v.str().secret(),
-"password": v.str().secret(),
+    "api_key": v.str().secret(),
+    "password": v.str().secret(),
 }
 ```
 

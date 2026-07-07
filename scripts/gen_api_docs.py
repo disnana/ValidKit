@@ -23,8 +23,8 @@ v_module = importlib.import_module("validkit.v")
 
 def write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = inspect.cleandoc(content).strip()
-    text = "\n".join(line[4:] if line.startswith("    ") else line for line in text.splitlines())
+    lines = content.strip("\n").splitlines()
+    text = "\n".join(line[4:] if line.startswith("    ") else line for line in lines).strip()
     path.write_text(text + "\n", encoding="utf-8")
 
 
@@ -118,7 +118,7 @@ def generate_api(lang: str) -> str:
 
     ### `validate`
 
-    ```python
+    ```text
     validate{validate_sig}
     ```
 
@@ -126,7 +126,7 @@ def generate_api(lang: str) -> str:
 
     ### `compile`
 
-    ```python
+    ```text
     compile{compile_sig}
     ```
 
@@ -134,7 +134,7 @@ def generate_api(lang: str) -> str:
 
     ### `Schema`
 
-    ```python
+    ```text
     Schema{schema_sig}
     ```
 
@@ -311,8 +311,9 @@ def generate_tutorial(lang: str) -> str:
     schema = {{"id": v.int(), "name": v.str().min(3)}}
     result = validate({{"id": "x", "name": "Al"}}, schema, collect_errors=True)
 
-    for error in result.errors:
-        print(error.path, error.message)
+    if result.has_errors:
+        for error in result.errors:
+            print(error.path, error.message)
     ```
     """
 
@@ -451,8 +452,9 @@ def generate_error_handling(lang: str) -> str:
         collect_errors=True,
     )
 
-    for error in result.errors:
-        print(error.path, error.message)
+    if result.has_errors:
+        for error in result.errors:
+            print(error.path, error.message)
     ```
 
     ## {"秘密値のマスク" if ja else "Secret masking"}

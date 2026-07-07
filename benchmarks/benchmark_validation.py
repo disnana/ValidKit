@@ -16,7 +16,6 @@ from typing import Any, Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from validkit import compile, v, validate  # noqa: E402
@@ -293,11 +292,14 @@ def main() -> None:
         print(json.dumps({
             "native_available": NATIVE_RUNTIME.available,
             "native_disabled": NATIVE_RUNTIME.disabled,
+            "native_module": getattr(NATIVE_RUNTIME.module, "__file__", None),
             "native_mode": args.native_mode,
             "results": results,
         }, indent=2))
     else:
         print(f"native available: {NATIVE_RUNTIME.available} (disabled: {NATIVE_RUNTIME.disabled})")
+        if NATIVE_RUNTIME.available:
+            print(f"native module: {getattr(NATIVE_RUNTIME.module, '__file__', None)}")
         print_table(results, args.native_mode)
 
 
